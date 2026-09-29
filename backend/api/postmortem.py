@@ -144,7 +144,7 @@ def create_postmortem(incident_id: str) -> Postmortem:
 # ---------------------------------------------------------------------------
 
 class PostmortemApproveIn(BaseModel):
-    postmortem: dict
+    postmortem: dict = {}
     actor: str = "engineer"
 
 
@@ -168,11 +168,14 @@ async def draft_postmortem_endpoint(incident_id: str):
 
 
 @router.post("/incidents/{incident_id}/postmortem/approve")
-async def approve_postmortem_endpoint(incident_id: str, body: PostmortemApproveIn):
+async def approve_postmortem_endpoint(incident_id: str, body: PostmortemApproveIn = None):
     """
     Approve a draft postmortem and retain it permanently to long-term memory.
     Only call after human review of the draft.
+    Body is optional — if omitted, a minimal record keyed to incident_id is retained.
     """
+    if body is None:
+        body = PostmortemApproveIn()
     try:
         from postmortem import approve_postmortem
     except ImportError as e:

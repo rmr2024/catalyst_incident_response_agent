@@ -1,185 +1,424 @@
 """
-Dashboard Page Component for Incident Response Console (P4).
-Renders real-time incident feed, severity filters, KPIs, and quick inspector.
+Incident Response Agent - Operations Dashboard (P4).
+100% Pure Python + Streamlit implementation demonstrating:
+1. KPI Section (Active Incidents, P1/Critical, Resolved Today, Avg MTTR)
+2. Incident Feed with clear P1/P2/P3 visual indicators
+3. Trigger Demo Alert button with spinner, instant refresh, and highlighted new incident
+4. Recent Incidents (ID, Service, Root Cause, Resolution, TTR, Outcome)
+5. Memory Status display (Memory ON / Memory OFF from session_state)
+6. Refresh button
+7. Robust error handling for offline backend, timeouts, empty feeds, and malformed data
+8. Professional SRE UI using native Streamlit containers, metrics, expanders, and dataframes
 """
 
 from typing import List, Optional
+import pandas as pd
 import streamlit as st
 
-from api_client import api_client
-from components.badges import render_severity_badge, render_status_badge
-from components.cards import render_incident_card, render_recommendation_card
-from components.tables import render_incidents_table
-from types import Incident
+from services.api_client import api_client
+from components.badges import (
+    render_memory_badge,
+    render_outcome_badge,
+    render_severity_badge,
+    render_status_badge,
+    render_system_status_pill,
+)
+try:
+    from models import Alert, Incident, IncidentStats
+except ImportError:
+    from types import Alert, Incident, IncidentStats
+from utils.helpers import (
+    calculate_ttr_display,
+    format_timestamp,
+    get_severity_color,
+    get_status_color,
+)
+
+
+def _get_severity_indicator(severity: str) -> str:
+    """Return prominent visual emoji + label for P1/P2/P3 severity."""
+    sev = (severity or "P3").upper()
+    if sev == "P1":
+        return "🔴 P1 - CRITICAL"
+    elif sev == "P2":
+        return "🟠 P2 - MAJOR"
+    elif sev == "P3":
+        return "🟡 P3 - MINOR"
+    return f"⚪ {sev}"
 
 
 def render_dashboard():
-    """Main render function for the Incident Dashboard."""
-    st.markdown("## 📊 Incident Operations Dashboard")
-    st.caption("Real-time production incidents, severity classification, and active investigation telemetry")
+    """Main render function for the Incident Response Dashboard."""
 
-    # 1. KPI Metric Row
-    stats = api_client.get_stats()
-    kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
+    # ---------------------------------------------------------
+    # Header & System / Memory Status Bar
+    # ---------------------------------------------------------
+    st.markdown("## 🛡️ Incident Response Agent — Live Operations Dashboard")
+    st.caption("Autonomous triage, root-cause investigation, and memory-backed remediation for production incidents.")
 
-    with kpi_col1:
-        st.metric(
-            label="Active Outages",
-            value=stats.active,
-            delta="Needs Attention" if stats.active > 0 else "Normal",
-            delta_color="inverse" if stats.active > 0 else "normal",
+    # 5. Memory Status & System Telemetry Display
+    memory_enabled: bool = st.session_state.get("memory_enabled", True)
+    backend_live: bool = api_client.is_backend_live
+
+    status_col1, status_col2, status_col3 = st.columns([1.5, 1.5, 3])
+
+    with status_col1:
+        if memory_enabled:
+            st.markdown(
+                '<div style="background-color: rgba(59, 130, 246, 0.12); border: 1px solid #3b82f6; '
+                'border-radius: 8px; padding: 6px 12px; text-align: center; color: #60a5fa; '
+                'font-size: 13px; font-weight: 700;">🧠 Memory ON</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div style="background-color: rgba(148, 163, 184, 0.12); border: 1px solid #64748b; '
+                'border-radius: 8px; padding: 6px 12px; text-align: center; color: #94a3b8; '
+                'font-size: 13px; font-weight: 700;">⚪ Memory OFF</div>',
+                unsafe_allow_html=True,
+            )
+
+    with status_col2:
+        st.markdown(render_system_status_pill(backend_live), unsafe_allow_html=True)
+
+    with status_col3:
+        if not backend_live:
+            st.caption("ℹ️ *Running in offline mock fallback mode. All features & alert triggers remain functional.*")
+        else:
+            st.caption("⚡ *Connected to live FastAPI backend at http://localhost:8000.*")
+
+    st.write("")
+
+    # ---------------------------------------------------------
+    # 3. Controls & Trigger Demo Alert Bar
+    # ---------------------------------------------------------
+    btn_col1, btn_col2, filter_col1, filter_col2 = st.columns([1.5, 1, 1.2, 1.2])
+
+    with btn_col1:
+        # 3. Prominent Trigger Demo Alert Button
+        trigger_clicked = st.button(
+            "🚨 Trigger Demo Alert",
+            type="primary",
+            use_container_width=True,
+            help="Simulate an urgent production alert and ingest it into the agent pipeline",
         )
-    with kpi_col2:
-        st.metric(
-            label="Total Incidents",
-            value=stats.total,
-        )
-    with kpi_col3:
-        st.metric(
-            label="Critical P1 Outages",
-            value=stats.p1,
-            delta=f"{stats.p1} P1" if stats.p1 > 0 else None,
-            delta_color="inverse",
-        )
-    with kpi_col4:
-        st.metric(
-            label="Average MTTR",
-            value=f"{stats.avg_ttr_minutes:.1f}m",
-            delta="-3.4m vs generic",
+
+    with btn_col2:
+        # 6. Refresh Button
+        refresh_clicked = st.button(
+            "🔄 Refresh",
+            use_container_width=True,
+            help="Re-fetch latest telemetry, incidents, and KPI metrics",
         )
 
-    st.markdown("---")
-
-    # 2. Action Controls & Filter Bar
-    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4 = st.columns([1.5, 1, 1, 1])
-
-    with ctrl_col1:
-        if st.button("🚨 Trigger Demo Alert (P1)", use_container_width=True, type="primary"):
-            with st.spinner("Ingesting alert from payments-db..."):
-                alert = api_client.trigger_demo_alert()
-                st.session_state["loading_state"] = False
-                st.toast(f"New Alert Ingested: {alert.service} ({alert.severity})", icon="🚨")
-                st.rerun()
-
-    with ctrl_col2:
+    with filter_col1:
         sev_filter = st.selectbox(
             "Filter Severity",
             options=["All", "P1", "P2", "P3"],
             index=0,
-            key="dash_filter_sev",
+            key="dash_sev_filter",
         )
 
-    with ctrl_col3:
-        status_filter = st.selectbox(
-            "Filter Status",
-            options=["All", "Active Only", "Resolved", "Investigating", "Awaiting Approval"],
-            index=0,
-            key="dash_filter_status",
-        )
-
-    with ctrl_col4:
+    with filter_col2:
         service_filter = st.selectbox(
             "Filter Service",
-            options=["All", "payments-db", "auth-service", "order-processor", "inventory-api"],
+            options=["All", "payments-db", "auth-service", "web-gateway", "order-processor", "inventory-api"],
             index=0,
-            key="dash_filter_service",
+            key="dash_svc_filter",
         )
 
-    # 3. Retrieve filtered incidents
-    severity_param = None if sev_filter == "All" else sev_filter
-    service_param = None if service_filter == "All" else service_filter
+    # Handle Refresh Action
+    if refresh_clicked:
+        st.rerun()
 
-    active_param = None
-    status_param = None
-    if status_filter == "Active Only":
-        active_param = True
-    elif status_filter == "Resolved":
-        status_param = "resolved"
-    elif status_filter == "Investigating":
-        status_param = "investigating"
-    elif status_filter == "Awaiting Approval":
-        status_param = "awaiting_approval"
+    # Handle Trigger Demo Alert Action
+    if trigger_clicked:
+        with st.spinner("Ingesting alert telemetry from payments-db..."):
+            try:
+                # 1. Call services/api_client.py
+                new_alert: Alert = api_client.trigger_demo_alert()
+                # Store in session state to show newly created incident
+                st.session_state["newly_triggered_alert"] = new_alert
 
-    incidents: List[Incident] = api_client.get_incidents(
-        severity=severity_param,
-        service=service_param,
-        status=status_param,
-        active=active_param,
-    )
+                # 4. Refresh incident data / pick up new incident
+                matched_incident = api_client.get_incident(new_alert.id)
+                if matched_incident:
+                    st.session_state["current_incident"] = matched_incident
 
-    # 4. Main Content: Incidents Feed and Selected Detail
-    feed_col, detail_col = st.columns([1.6, 1.4])
+                st.session_state["alert_feedback"] = {
+                    "type": "success",
+                    "message": f"🚨 Demo Alert Ingested: **{new_alert.id}** for service `{new_alert.service}` [{new_alert.severity}]",
+                }
+            except Exception as e:
+                st.session_state["alert_feedback"] = {
+                    "type": "error",
+                    "message": f"Failed to ingest demo alert: {e}",
+                }
 
-    with feed_col:
-        st.subheader(f"Incidents Feed ({len(incidents)})")
-        view_mode = st.radio("View Display", ["Cards View", "Table View"], horizontal=True, key="dash_view_mode")
-
-        if not incidents:
-            st.info("No incidents match the active filters.")
-        elif view_mode == "Table View":
-            render_incidents_table(incidents)
+    # Display Alert Feedback if present
+    feedback = st.session_state.get("alert_feedback")
+    if feedback:
+        if feedback.get("type") == "success":
+            st.success(feedback.get("message"))
         else:
-            current_id = (
-                st.session_state.get("current_incident").id
-                if st.session_state.get("current_incident")
-                else None
+            st.error(feedback.get("message"))
+
+    # 6. Show the newly created incident callout if an alert was just triggered
+    newly_triggered: Optional[Alert] = st.session_state.get("newly_triggered_alert")
+    if newly_triggered:
+        with st.container():
+            st.markdown(
+                f"""
+                <div style="border: 2px solid #ef4444; background: rgba(239, 68, 68, 0.08); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 15px; font-weight: 700; color: #f87171;">
+                            🚨 Newly Created Incident: {newly_triggered.id}
+                        </span>
+                        <span style="background-color: #ef444422; color: #ef4444; border: 1px solid #ef4444; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">
+                            {newly_triggered.severity or 'P1'}
+                        </span>
+                    </div>
+                    <div style="font-size: 13px; color: #f1f5f9; margin-bottom: 6px;">
+                        <strong>Target Service:</strong> <code>{newly_triggered.service}</code> &nbsp;|&nbsp;
+                        <strong>Impact:</strong> {newly_triggered.impact or 'Critical checkout degradation'}
+                    </div>
+                    <div style="font-size: 12px; color: #cbd5e1;">
+                        <strong>Message:</strong> {newly_triggered.message or 'Connection pool exhausted, requests timing out'} &nbsp;|&nbsp;
+                        <strong>Affected Users:</strong> {newly_triggered.affected_users or 4800:,} &nbsp;|&nbsp;
+                        <strong>Timestamp:</strong> {format_timestamp(newly_triggered.timestamp)}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
 
-            for inc in incidents:
-                is_selected = inc.id == current_id
-                render_incident_card(inc, is_selected=is_selected)
+    st.markdown("---")
 
-                btn_col1, btn_col2 = st.columns([1, 1])
-                with btn_col1:
-                    if st.button("Inspect Incident →", key=f"btn_inspect_{inc.id}", use_container_width=True):
-                        st.session_state["current_incident"] = inc
-                        st.rerun()
-                with btn_col2:
-                    if st.button("Enter War Room 🚨", key=f"btn_war_{inc.id}", use_container_width=True):
-                        st.session_state["current_incident"] = inc
-                        st.session_state["selected_page"] = "War Room"
-                        st.rerun()
+    # ---------------------------------------------------------
+    # 7. Error Handling & Data Fetching
+    # ---------------------------------------------------------
+    try:
+        stats: IncidentStats = api_client.get_stats()
+    except Exception as ex:
+        st.warning(f"Could not load incident statistics: {ex}")
+        stats = IncidentStats(total=0, active=0, resolved_today=0, p1=0, p2=0, p3=0, avg_ttr_minutes=0.0)
 
-    with detail_col:
-        st.subheader("Incident Quick Inspector")
-        active_inc: Optional[Incident] = st.session_state.get("current_incident")
+    try:
+        all_incidents: List[Incident] = api_client.get_incidents()
+    except Exception as ex:
+        st.error(f"Error fetching incidents: {ex}")
+        all_incidents = []
 
-        if not active_inc and incidents:
-            active_inc = incidents[0]
-            st.session_state["current_incident"] = active_inc
+    # Apply filters
+    filtered_incidents = all_incidents
+    if sev_filter != "All":
+        filtered_incidents = [i for i in filtered_incidents if i.severity == sev_filter]
+    if service_filter != "All":
+        filtered_incidents = [i for i in filtered_incidents if i.service == service_filter]
 
-        if active_inc:
-            with st.container():
-                st.markdown(f"### {active_inc.id}: {active_inc.title}")
-                meta_col1, meta_col2, meta_col3 = st.columns(3)
-                with meta_col1:
-                    st.write("**Service:**", f"`{active_inc.service}`")
-                with meta_col2:
-                    st.write("**Severity:**", render_severity_badge(active_inc.severity), unsafe_allow_html=True)
-                with meta_col3:
-                    st.write("**Status:**", render_status_badge(active_inc.status), unsafe_allow_html=True)
+    # Separate Active vs Resolved Incidents
+    active_statuses = {"investigating", "recommended", "awaiting_approval", "executing"}
+    active_incidents = [i for i in filtered_incidents if i.status in active_statuses]
+    resolved_incidents = [i for i in filtered_incidents if i.status in ("resolved", "mitigated")]
 
-                st.markdown(f"**Symptoms:** {active_inc.symptoms}")
+    # ---------------------------------------------------------
+    # 1. KPI Section
+    # ---------------------------------------------------------
+    st.markdown("### 📊 Operational Health & KPIs")
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
-                if active_inc.root_cause:
-                    st.markdown(f"**Identified Root Cause:** `{active_inc.root_cause}`")
+    with kpi1:
+        st.metric(
+            label="Active Incidents",
+            value=stats.active,
+            delta="Needs Attention" if stats.active > 0 else "All Clear",
+            delta_color="inverse" if stats.active > 0 else "normal",
+        )
 
-                if active_inc.recommendation:
-                    st.markdown("#### AI Memory Recommendation")
-                    render_recommendation_card(active_inc.recommendation)
+    with kpi2:
+        st.metric(
+            label="P1 / Critical Incidents",
+            value=stats.p1,
+            delta=f"{stats.p1} Critical Outage(s)" if stats.p1 > 0 else "All Clear",
+            delta_color="inverse" if stats.p1 > 0 else "normal",
+        )
 
-                st.markdown("---")
-                if st.button(
-                    f"Open War Room for {active_inc.id} →",
-                    type="primary",
-                    use_container_width=True,
-                    key="btn_open_war_room_detail",
-                ):
-                    st.session_state["current_incident"] = active_inc
-                    st.session_state["selected_page"] = "War Room"
-                    st.rerun()
+    with kpi3:
+        resolved_count = stats.resolved_today if stats.resolved_today > 0 else len(resolved_incidents)
+        st.metric(
+            label="Resolved Today",
+            value=resolved_count,
+            delta="+4 vs yesterday",
+        )
+
+    with kpi4:
+        st.metric(
+            label="Average Time to Resolution",
+            value=f"{stats.avg_ttr_minutes:.1f}m",
+            delta="-3.4m with Memory ON" if memory_enabled else "Memory OFF baseline",
+        )
+
+    st.markdown("---")
+
+    # ---------------------------------------------------------
+    # 2. Incident Feed (Active Incidents)
+    # ---------------------------------------------------------
+    feed_header_col1, feed_header_col2 = st.columns([3, 1])
+    with feed_header_col1:
+        st.markdown(f"### 🚨 Active Incident Feed ({len(active_incidents)})")
+        st.caption("Active production anomalies undergoing autonomous investigation and mitigation")
+
+    with feed_header_col2:
+        view_style = st.radio(
+            "Display Mode",
+            options=["Card View", "Table View"],
+            horizontal=True,
+            label_visibility="collapsed",
+            key="dash_feed_display_mode",
+        )
+
+    if not active_incidents:
+        st.info("🟢 **No active incidents matching current filters.** All monitored services are healthy.")
+    else:
+        if view_style == "Table View":
+            # Tabular view of active incidents
+            table_rows = []
+            for inc in active_incidents:
+                table_rows.append({
+                    "Incident ID": inc.id,
+                    "Severity": inc.severity,
+                    "Service": inc.service,
+                    "Status": inc.status.replace("_", " ").upper(),
+                    "Title": inc.title,
+                    "Affected Users": f"{inc.affected_users:,}" if inc.affected_users else "—",
+                    "Started Time": format_timestamp(inc.started_at),
+                })
+            st.dataframe(
+                pd.DataFrame(table_rows),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Incident ID": st.column_config.TextColumn("ID", width="small"),
+                    "Severity": st.column_config.TextColumn("Severity", width="small"),
+                    "Service": st.column_config.TextColumn("Service", width="medium"),
+                    "Status": st.column_config.TextColumn("Status", width="medium"),
+                    "Title": st.column_config.TextColumn("Title", width="large"),
+                    "Affected Users": st.column_config.TextColumn("Affected Users", width="small"),
+                    "Started Time": st.column_config.TextColumn("Started Time", width="medium"),
+                },
+            )
         else:
-            st.info("Select an incident from the feed to inspect investigation details.")
+            # Card View with detailed SRE layout
+            for inc in active_incidents:
+                sev_color = get_severity_color(inc.severity)
+                status_color = get_status_color(inc.status)
+                sev_pill = _get_severity_indicator(inc.severity)
+
+                with st.container():
+                    st.markdown(
+                        f"""
+                        <div style="border: 1px solid {sev_color}66; border-left: 5px solid {sev_color}; background: rgba(15, 23, 42, 0.65); border-radius: 8px; padding: 14px; margin-bottom: 12px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <div>
+                                    <span style="font-weight: 700; font-size: 15px; color: #f8fafc;">{inc.id}</span>
+                                    <span style="margin-left: 10px; color: #94a3b8; font-size: 13px;">Service: <code>{inc.service}</code></span>
+                                </div>
+                                <div>
+                                    <span style="background-color: {sev_color}22; color: {sev_color}; border: 1px solid {sev_color}; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 700;">
+                                        {sev_pill}
+                                    </span>
+                                    &nbsp;
+                                    <span style="background-color: {status_color}22; color: {status_color}; border: 1px solid {status_color}; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;">
+                                        {inc.status.replace('_', ' ').upper()}
+                                    </span>
+                                </div>
+                            </div>
+                            <div style="font-size: 14px; font-weight: 600; color: #e2e8f0; margin-bottom: 6px;">
+                                {inc.title}
+                            </div>
+                            <div style="display: flex; gap: 24px; color: #94a3b8; font-size: 12px; margin-top: 6px;">
+                                <span>👥 <strong>Affected Users:</strong> <span style="color: #f1f5f9;">{f"{inc.affected_users:,}" if inc.affected_users else "—"}</span></span>
+                                <span>⏱️ <strong>Started:</strong> <span style="color: #f1f5f9;">{format_timestamp(inc.started_at)}</span></span>
+                                <span>🧠 <strong>Memory Retained:</strong> <span style="color: #60a5fa;">{'Yes' if inc.memory_used else 'No'}</span></span>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+                    with st.expander(f"🔍 Inspect Investigation & Runbook for {inc.id}"):
+                        st.markdown(f"**Symptoms:** {inc.symptoms}")
+                        if inc.root_cause:
+                            st.markdown(f"**Identified Root Cause:** `{inc.root_cause}`")
+                        if inc.recommendation:
+                            st.markdown("---")
+                            st.markdown(f"**Top Hypothesis:** `{inc.recommendation.hypothesis}` (Confidence: **{inc.recommendation.confidence * 100:.0f}%**)")
+                            st.markdown(f"**Recommended Runbook:** `{inc.recommendation.runbook}`")
+                            if inc.recommendation.recommended_steps:
+                                st.markdown("**Recommended Steps:**")
+                                for s_idx, step in enumerate(inc.recommendation.recommended_steps, 1):
+                                    st.markdown(f"{s_idx}. {step}")
+
+                        btn_inspect_col1, btn_inspect_col2 = st.columns([1, 1])
+                        with btn_inspect_col1:
+                            if st.button(f"Set Active Target ({inc.id})", key=f"target_{inc.id}"):
+                                st.session_state["current_incident"] = inc
+                                st.toast(f"Set current target to {inc.id}")
+                                st.rerun()
+                        with btn_inspect_col2:
+                            if st.button(f"Enter War Room 🚨", key=f"war_{inc.id}"):
+                                st.session_state["current_incident"] = inc
+                                st.session_state["selected_page"] = "War Room"
+                                st.rerun()
+
+    st.markdown("---")
+
+    # ---------------------------------------------------------
+    # 4. Recent Incidents (Resolved / Historical)
+    # ---------------------------------------------------------
+    st.markdown(f"### 📋 Recent Incidents ({len(resolved_incidents)} Resolved)")
+    st.caption("Historical incident archive with root cause findings, runbook resolutions, MTTR durations, and outcomes")
+
+    if not resolved_incidents:
+        st.info("No resolved incidents recorded yet.")
+    else:
+        recent_data = []
+        for inc in resolved_incidents:
+            ttr_display = calculate_ttr_display(inc.started_at, inc.resolved_at)
+            outcome = getattr(inc, "outcome", None) or "WORKED"
+
+            recent_data.append({
+                "Incident ID": inc.id,
+                "Service": inc.service,
+                "Root Cause": inc.root_cause or "Service degradation identified",
+                "Resolution": inc.resolution or "Runbook remediation executed",
+                "Time to Resolution": ttr_display,
+                "Outcome": outcome.upper(),
+            })
+
+        df_recent = pd.DataFrame(recent_data)
+        st.dataframe(
+            df_recent,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Incident ID": st.column_config.TextColumn("Incident ID", width="small"),
+                "Service": st.column_config.TextColumn("Service", width="small"),
+                "Root Cause": st.column_config.TextColumn("Root Cause", width="medium"),
+                "Resolution": st.column_config.TextColumn("Resolution", width="large"),
+                "Time to Resolution": st.column_config.TextColumn("Time to Resolution", width="small"),
+                "Outcome": st.column_config.TextColumn("Outcome", width="small"),
+            },
+        )
+
+        with st.expander("📖 View Post-Mortem & Memory Retention Details"):
+            for inc in resolved_incidents:
+                st.markdown(f"#### {inc.id} — `{inc.service}`")
+                st.markdown(f"- **Symptoms:** {inc.symptoms}")
+                st.markdown(f"- **Root Cause:** `{inc.root_cause}`")
+                st.markdown(f"- **Resolution:** {inc.resolution}")
+                st.markdown(f"- **Duration:** {calculate_ttr_display(inc.started_at, inc.resolved_at)} &nbsp;|&nbsp; **Outcome:** `{getattr(inc, 'outcome', 'WORKED')}`")
+                st.markdown("---")
 
 
 if __name__ == "__main__":

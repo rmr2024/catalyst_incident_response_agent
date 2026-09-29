@@ -10,11 +10,17 @@ import streamlit as st
 # Ensure frontend root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import models
+import types
+for _attr in dir(models):
+    if not _attr.startswith("_"):
+        setattr(types, _attr, getattr(models, _attr))
+
 from api_client import api_client
 from components.badges import render_memory_badge, render_severity_badge, render_status_badge, render_system_status_pill
 from pages.dashboard import render_dashboard
 from pages.simulator import render_simulator
-from types import Incident
+from models import Incident
 
 # 1. Page Configuration
 st.set_page_config(

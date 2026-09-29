@@ -24,6 +24,7 @@ MOCK_STATS: Dict[str, Any] = {
     "p2": 1,
     "p3": 0,
     "avg_ttr_minutes": 13.8,
+    "resolved_today": 15,
 }
 
 # 9. Similar Incidents & 10. Historical Root Causes
@@ -335,6 +336,7 @@ MOCK_RESOLVED_INCIDENTS: List[Dict[str, Any]] = [
         "resolved_at": "2026-09-28T18:32:00Z",
         "affectedUsers": 8400,
         "affected_users": 8400,
+        "outcome": "worked",
         "isNovel": True,
         "is_novel": True,
         "memoryUsed": True,
@@ -356,6 +358,7 @@ MOCK_RESOLVED_INCIDENTS: List[Dict[str, Any]] = [
         "resolved_at": "2026-09-27T09:24:00Z",
         "affectedUsers": 3200,
         "affected_users": 3200,
+        "outcome": "worked",
         "isNovel": False,
         "is_novel": False,
         "memoryUsed": True,

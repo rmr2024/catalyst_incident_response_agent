@@ -20,15 +20,26 @@ from mocks.mock_data import (
     MOCK_STATS,
     MOCK_TIMELINE_EVENTS,
 )
-from types import (
-    Alert,
-    Incident,
-    IncidentStats,
-    MemoryState,
-    SimulationResponse,
-    SimulationScenario,
-    TimelineEvent,
-)
+try:
+    from models import (
+        Alert,
+        Incident,
+        IncidentStats,
+        MemoryState,
+        SimulationResponse,
+        SimulationScenario,
+        TimelineEvent,
+    )
+except ImportError:
+    from types import (
+        Alert,
+        Incident,
+        IncidentStats,
+        MemoryState,
+        SimulationResponse,
+        SimulationScenario,
+        TimelineEvent,
+    )
 
 
 def get_backend_url() -> str:
@@ -83,10 +94,11 @@ class ApiClient:
     def check_health(self) -> Dict[str, Any]:
         """Check if FastAPI backend is healthy and responding."""
         if self.force_mocks:
+            self._is_live = False
             return {"ok": False, "memory": True, "mode": "forced_mock"}
 
         try:
-            with httpx.Client(timeout=3.0) as client:
+            with httpx.Client(timeout=1.5) as client:
                 res = client.get(f"{self.base_url}{API_ENDPOINTS['HEALTH']}")
                 if res.status_code == 200:
                     self._is_live = True
@@ -105,33 +117,88 @@ class ApiClient:
             self.check_health()
         return bool(self._is_live)
 
+    def refresh_connection(self) -> bool:
+        """Force re-check of backend health."""
+        self._is_live = None
+        return self.is_backend_live
+
     # 1. trigger_demo_alert()
     def trigger_demo_alert(self) -> Alert:
         """Trigger predefined demo alert (POST /alerts/demo) or return mock Alert."""
-        if not self.force_mocks:
+        if not self.force_mocks and self.is_backend_live:
             try:
                 with httpx.Client(timeout=self.timeout) as client:
                     res = client.post(f"{self.base_url}{API_ENDPOINTS['ALERT_DEMO']}")
                     if res.status_code in (200, 201):
                         self._is_live = True
                         data = res.json()
-                        metrics = data.get("metrics") or {}
+                        inc_id = data.get("incident_id") or data.get("id") or "ALT-LIVE"
                         return Alert(
-                            id=data.get("incident_id") or data.get("id") or "ALT-LIVE",
+                            id=inc_id,
                             service=data.get("service", "payments-db"),
-                            error_rate=metrics.get("error_rate", 0.14),
-                            affected_users=metrics.get("affected_users", 4800),
+                            error_rate=0.14,
+                            affected_users=4800,
                             impact="Critical payment authorization degradation",
-                            timestamp=data.get("timestamp", "2026-09-29T11:30:00Z"),
-                            message=data.get("message", "connection pool exhausted"),
-                            severity=data.get("severity", "P1"),
-                            metrics=metrics,
+                            timestamp="2026-09-29T11:30:00Z",
+                            message=data.get("message") or "connection pool exhausted, requests timing out",
+                            severity=data.get("severity") or "P1",
+                            metrics={"error_rate": 0.14, "affected_users": 4800, "latency_p99_ms": 3400},
                         )
             except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
                 self._last_error = str(e)
                 self._is_live = False
 
-        return Alert.model_validate(MOCK_DEMO_ALERT)
+        from datetime import datetime, timezone
+        from mocks.mock_data import MOCK_RECOMMENDATION_DB_POOL, MOCK_SIMILAR_INCIDENTS, MOCK_TIMELINE_EVENTS
+
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        demo_count = len([i for i in MOCK_INCIDENTS if "DEMO" in str(i.get("id", ""))]) + 1
+        demo_id = f"INC-2026-0929-DEMO{demo_count:02d}"
+
+        new_inc = {
+            "id": demo_id,
+            "title": "PostgreSQL Connection Pool Saturation on Payments DB",
+            "service": "payments-db",
+            "severity": "P1",
+            "status": "investigating",
+            "symptoms": "connection pool exhausted, client requests timing out after 30s",
+            "rootCause": "Database connection pool saturation under sudden checkout surge",
+            "root_cause": "Database connection pool saturation under sudden checkout surge",
+            "resolution": None,
+            "startedAt": now_str,
+            "started_at": now_str,
+            "resolvedAt": None,
+            "resolved_at": None,
+            "affectedUsers": 4800,
+            "affected_users": 4800,
+            "recommendation": MOCK_RECOMMENDATION_DB_POOL,
+            "similarIncidents": MOCK_SIMILAR_INCIDENTS,
+            "similar_incidents": MOCK_SIMILAR_INCIDENTS,
+            "timeline": MOCK_TIMELINE_EVENTS,
+            "isNovel": False,
+            "is_novel": False,
+            "memoryUsed": True,
+            "memory_used": True,
+            "outcome": None,
+        }
+
+        # Prepend to mock incidents list so it appears right at the top
+        MOCK_INCIDENTS.insert(0, new_inc)
+        MOCK_STATS["active"] = MOCK_STATS.get("active", 0) + 1
+        MOCK_STATS["total"] = MOCK_STATS.get("total", 0) + 1
+        MOCK_STATS["p1"] = MOCK_STATS.get("p1", 0) + 1
+
+        return Alert(
+            id=demo_id,
+            service="payments-db",
+            error_rate=0.14,
+            affected_users=4800,
+            impact="Critical checkout degradation for active shoppers",
+            timestamp=now_str,
+            message="connection pool exhausted, requests timing out after 30s",
+            severity="P1",
+            metrics={"error_rate": 0.14, "latency_p99_ms": 3400, "affected_users": 4800},
+        )
 
     # 2. get_incidents()
     def get_incidents(
@@ -143,7 +210,7 @@ class ApiClient:
         limit: int = 50,
     ) -> List[Incident]:
         """Fetch list of incidents from backend (GET /incidents) with filtering, or fallback to mock data."""
-        if not self.force_mocks:
+        if not self.force_mocks and self.is_backend_live:
             try:
                 params: Dict[str, Any] = {"limit": limit}
                 if status:
@@ -205,7 +272,7 @@ class ApiClient:
     # 3. get_incident(incident_id)
     def get_incident(self, incident_id: str) -> Optional[Incident]:
         """Fetch detailed information for a single incident (GET /incidents/{incident_id})."""
-        if not self.force_mocks:
+        if not self.force_mocks and self.is_backend_live:
             try:
                 with httpx.Client(timeout=self.timeout) as client:
                     res = client.get(f"{self.base_url}{API_ENDPOINTS['INCIDENT_BY_ID'](incident_id)}")
@@ -257,7 +324,7 @@ class ApiClient:
         # Update memory toggle on backend if needed
         self.set_memory_status(memory_enabled)
 
-        if not self.force_mocks:
+        if not self.force_mocks and self.is_backend_live:
             try:
                 with httpx.Client(timeout=self.timeout) as client:
                     res = client.post(
@@ -286,7 +353,7 @@ class ApiClient:
     # 5. reset_simulation()
     def reset_simulation(self) -> Dict[str, bool]:
         """Reset simulation and demo database state (POST /reset)."""
-        if not self.force_mocks:
+        if not self.force_mocks and self.is_backend_live:
             try:
                 with httpx.Client(timeout=self.timeout) as client:
                     res = client.post(f"{self.base_url}{API_ENDPOINTS['RESET_SIMULATION']}")
@@ -302,7 +369,7 @@ class ApiClient:
     # 6. get_memory_status()
     def get_memory_status(self) -> bool:
         """Fetch Hindsight memory toggle status (GET /settings/memory)."""
-        if not self.force_mocks:
+        if not self.force_mocks and self.is_backend_live:
             try:
                 with httpx.Client(timeout=3.0) as client:
                     res = client.get(f"{self.base_url}{API_ENDPOINTS['SETTINGS_MEMORY']}")
@@ -317,7 +384,7 @@ class ApiClient:
 
     def set_memory_status(self, enabled: bool) -> bool:
         """Update Hindsight memory toggle status (POST /settings/memory)."""
-        if not self.force_mocks:
+        if not self.force_mocks and self.is_backend_live:
             try:
                 with httpx.Client(timeout=5.0) as client:
                     res = client.post(
@@ -348,13 +415,25 @@ class ApiClient:
     # Supporting domain helpers
     def get_stats(self) -> IncidentStats:
         """Fetch KPI statistics (GET /incidents/stats)."""
-        if not self.force_mocks:
+        if not self.force_mocks and self.is_backend_live:
             try:
                 with httpx.Client(timeout=self.timeout) as client:
                     res = client.get(f"{self.base_url}{API_ENDPOINTS['INCIDENT_STATS']}")
                     if res.status_code == 200:
                         self._is_live = True
-                        return IncidentStats.model_validate(res.json())
+                        data = res.json()
+                        by_sev = data.get("by_severity") or {}
+                        mttr_s = data.get("mttr_seconds")
+                        avg_ttr = round(mttr_s / 60.0, 1) if mttr_s else 0.0
+                        return IncidentStats(
+                            total=data.get("total", 0),
+                            active=data.get("active", 0),
+                            resolved_today=data.get("resolved", 0),
+                            p1=by_sev.get("P1", 0),
+                            p2=by_sev.get("P2", 0),
+                            p3=by_sev.get("P3", 0),
+                            avg_ttr_minutes=avg_ttr,
+                        )
             except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
                 self._last_error = str(e)
                 self._is_live = False
@@ -367,7 +446,7 @@ class ApiClient:
 
     def get_timeline(self, incident_id: str) -> List[TimelineEvent]:
         """Fetch incident timeline events (GET /incidents/{incident_id}/timeline)."""
-        if not self.force_mocks:
+        if not self.force_mocks and self.is_backend_live:
             try:
                 with httpx.Client(timeout=self.timeout) as client:
                     res = client.get(f"{self.base_url}{API_ENDPOINTS['INCIDENT_TIMELINE'](incident_id)}")

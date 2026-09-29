@@ -1,0 +1,14 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: "8000"
+      DATABASE_URL: sqlite:////data/incidents.db
+    volumes:
+      - backend-data:/data
+
+volumes:
+  backend-data:

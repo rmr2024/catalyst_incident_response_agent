@@ -82,7 +82,7 @@ def render_simulator():
                     st.write("🔍 Running agent investigation & hypothesis generation...")
                     time.sleep(0.5)
 
-                    res = api_client.trigger_simulation(selected_scenario.id)
+                    res = api_client.trigger_simulation(selected_scenario, memory_enabled=new_mem)
                     status_box.update(label="Simulation Pipeline Completed!", state="complete", expanded=False)
 
                 st.session_state["simulation_result"] = {

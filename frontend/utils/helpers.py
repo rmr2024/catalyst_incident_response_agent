@@ -32,6 +32,19 @@ def format_duration(seconds: Optional[float]) -> str:
     return f"{hours}h {rem_min}m"
 
 
+def calculate_ttr_display(started_at: Optional[str], resolved_at: Optional[str]) -> str:
+    """Calculate and format time-to-resolution duration between start and resolution."""
+    if not started_at or not resolved_at:
+        return "—"
+    try:
+        t0 = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        t1 = datetime.fromisoformat(resolved_at.replace("Z", "+00:00"))
+        diff = max(0.0, (t1 - t0).total_seconds())
+        return format_duration(diff)
+    except Exception:
+        return "—"
+
+
 def format_error_rate(rate: Optional[float]) -> str:
     """Format fractional error rate as percentage string."""
     if rate is None:

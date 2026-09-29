@@ -1,19 +1,33 @@
 """
 Realistic mock data fixtures matching hackathon operational scenarios.
-Used when backend is offline or when mock mode is enabled.
+Covers:
+1. Active incidents
+2. Resolved incidents
+3. P1/P2/P3 incidents
+4. Database pool exhaustion
+5. Memory leak
+6. Bad deployment
+7. Cache stampede
+8. Novel incident
+9. Similar incidents
+10. Root causes
+11. Recommendations
+12. Timeline events
 """
 
 from typing import Any, Dict, List
 
 MOCK_STATS: Dict[str, Any] = {
-    "total": 16,
-    "active": 2,
-    "p1": 1,
+    "total": 18,
+    "active": 3,
+    "p1": 2,
     "p2": 1,
     "p3": 0,
-    "avg_ttr_minutes": 14.2,
+    "avg_ttr_minutes": 13.8,
+    "resolved_today": 15,
 }
 
+# 9. Similar Incidents & 10. Historical Root Causes
 MOCK_SIMILAR_INCIDENTS: List[Dict[str, Any]] = [
     {
         "incidentId": "INC-104",
@@ -44,7 +58,8 @@ MOCK_SIMILAR_INCIDENTS: List[Dict[str, Any]] = [
     },
 ]
 
-MOCK_RECOMMENDATION: Dict[str, Any] = {
+# 11. Recommendations & Root Cause Hypotheses
+MOCK_RECOMMENDATION_DB_POOL: Dict[str, Any] = {
     "hypothesis": "Database connection pool exhaustion caused by high concurrent checkout requests",
     "confidence": 0.94,
     "evidence": [
@@ -76,6 +91,69 @@ MOCK_RECOMMENDATION: Dict[str, Any] = {
     "is_novel": False,
 }
 
+MOCK_RECOMMENDATION_CACHE: Dict[str, Any] = {
+    "hypothesis": "Redis token cache eviction causing stampede to backing database",
+    "confidence": 0.88,
+    "evidence": [
+        "Cache miss rate spiked from 4% to 82% at 11:42Z",
+        "Matches INC-142 Redis key expiry pattern",
+    ],
+    "recommendedSteps": [
+        "Execute CACHE-WARM-RESEED runbook to rebuild token cache in batches",
+        "Enable probabilistic early cache expiration on auth nodes",
+        "Verify cache miss rate drops below 10%",
+    ],
+    "recommended_steps": [
+        "Execute CACHE-WARM-RESEED runbook to rebuild token cache in batches",
+        "Enable probabilistic early cache expiration on auth nodes",
+        "Verify cache miss rate drops below 10%",
+    ],
+    "runbook": "CACHE-WARM-RESEED",
+    "failedBefore": [
+        "Flushing redis cluster worsened database CPU load in INC-131.",
+    ],
+    "failed_before": [
+        "Flushing redis cluster worsened database CPU load in INC-131.",
+    ],
+    "needsApproval": True,
+    "needs_approval": True,
+    "whatsDifferent": "Token cluster has 3 additional replica nodes since INC-142.",
+    "isNovel": False,
+    "is_novel": False,
+}
+
+MOCK_RECOMMENDATION_DEPLOY: Dict[str, Any] = {
+    "hypothesis": "Invalid routing configuration in canary deployment v3.2.1 causing HTTP 502 Bad Gateway",
+    "confidence": 0.96,
+    "evidence": [
+        "Canary release v3.2.1 deployed 8 minutes before 502 spike",
+        "Envoy proxy upstream connection reset logs matching INC-062",
+    ],
+    "recommendedSteps": [
+        "Execute DEPLOY-ROLLBACK-PREV runbook to revert traffic to v3.2.0",
+        "Drain traffic from canary pods",
+        "Verify HTTP 502 rate drops to 0%",
+    ],
+    "recommended_steps": [
+        "Execute DEPLOY-ROLLBACK-PREV runbook to revert traffic to v3.2.0",
+        "Drain traffic from canary pods",
+        "Verify HTTP 502 rate drops to 0%",
+    ],
+    "runbook": "DEPLOY-ROLLBACK-PREV",
+    "failedBefore": [
+        "Attempting in-place patch without rolling back prolonged outage by 25 minutes in INC-041.",
+    ],
+    "failed_before": [
+        "Attempting in-place patch without rolling back prolonged outage by 25 minutes in INC-041.",
+    ],
+    "needsApproval": True,
+    "needs_approval": True,
+    "whatsDifferent": "Deployment used blue/green routing switch.",
+    "isNovel": False,
+    "is_novel": False,
+}
+
+# 12. Timeline Events
 MOCK_TIMELINE_EVENTS: List[Dict[str, Any]] = [
     {
         "id": "EVT-001",
@@ -110,6 +188,7 @@ MOCK_TIMELINE_EVENTS: List[Dict[str, Any]] = [
     },
 ]
 
+# 1. Active Incidents & 3. P1/P2/P3 Incidents & 4. Database pool exhaustion
 MOCK_ACTIVE_INCIDENT: Dict[str, Any] = {
     "id": "INC-2026-0929-01",
     "title": "PostgreSQL Connection Pool Saturation on Payments DB",
@@ -126,7 +205,7 @@ MOCK_ACTIVE_INCIDENT: Dict[str, Any] = {
     "resolved_at": None,
     "affectedUsers": 4800,
     "affected_users": 4800,
-    "recommendation": MOCK_RECOMMENDATION,
+    "recommendation": MOCK_RECOMMENDATION_DB_POOL,
     "similarIncidents": MOCK_SIMILAR_INCIDENTS,
     "similar_incidents": MOCK_SIMILAR_INCIDENTS,
     "timeline": MOCK_TIMELINE_EVENTS,
@@ -138,6 +217,7 @@ MOCK_ACTIVE_INCIDENT: Dict[str, Any] = {
 
 MOCK_P1_INCIDENT: Dict[str, Any] = MOCK_ACTIVE_INCIDENT
 
+# 7. Cache stampede incident (P2, active)
 MOCK_P2_INCIDENT: Dict[str, Any] = {
     "id": "INC-2026-0929-02",
     "title": "Redis Token Cache Stampede in Auth Cluster",
@@ -154,22 +234,58 @@ MOCK_P2_INCIDENT: Dict[str, Any] = {
     "resolved_at": None,
     "affectedUsers": 2100,
     "affected_users": 2100,
-    "recommendation": {
-        "hypothesis": "Redis token cache eviction causing stampede to backing database",
-        "confidence": 0.88,
-        "evidence": ["Cache miss rate spiked from 4% to 82%", "Matches INC-142 pattern"],
-        "recommendedSteps": ["Execute CACHE-WARM-RESEED runbook", "Enable probabilistic early expiry"],
-        "runbook": "CACHE-WARM-RESEED",
-        "failedBefore": ["Flushing redis cluster worsened database CPU load in INC-131."],
-        "needsApproval": True,
-        "isNovel": False,
-    },
-    "similarIncidents": [],
+    "recommendation": MOCK_RECOMMENDATION_CACHE,
+    "similarIncidents": [
+        {
+            "incidentId": "INC-142",
+            "similarity": 0.91,
+            "outcome": "worked",
+            "rootCause": "Redis cache TTL sync expiry under peak login spike",
+            "resolution": "Warmed cache from replica and applied jitter to TTL.",
+        }
+    ],
     "timeline": [],
     "isNovel": False,
+    "is_novel": False,
     "memoryUsed": True,
+    "memory_used": True,
 }
 
+# 6. Bad deployment incident (P1, active)
+MOCK_BAD_DEPLOY_INCIDENT: Dict[str, Any] = {
+    "id": "INC-2026-0929-06",
+    "title": "HTTP 502 Bad Gateway Spike on Web Gateway (Canary v3.2.1)",
+    "service": "web-gateway",
+    "severity": "P1",
+    "status": "awaiting_approval",
+    "symptoms": "Upstream connection reset, ingress error rate jumped to 28%",
+    "rootCause": "Invalid TLS upstream routing config introduced in canary v3.2.1",
+    "root_cause": "Invalid TLS upstream routing config introduced in canary v3.2.1",
+    "resolution": None,
+    "startedAt": "2026-09-29T11:50:00Z",
+    "started_at": "2026-09-29T11:50:00Z",
+    "resolvedAt": None,
+    "resolved_at": None,
+    "affectedUsers": 9200,
+    "affected_users": 9200,
+    "recommendation": MOCK_RECOMMENDATION_DEPLOY,
+    "similarIncidents": [
+        {
+            "incidentId": "INC-062",
+            "similarity": 0.95,
+            "outcome": "worked",
+            "rootCause": "Canary Envoy proxy TLS config regression",
+            "resolution": "Rolled back to previous stable release via DEPLOY-ROLLBACK-PREV.",
+        }
+    ],
+    "timeline": [],
+    "isNovel": False,
+    "is_novel": False,
+    "memoryUsed": True,
+    "memory_used": True,
+}
+
+# P3 Incident (Recommended)
 MOCK_P3_INCIDENT: Dict[str, Any] = {
     "id": "INC-2026-0929-03",
     "title": "Slow Reporting Batch Query Execution",
@@ -199,8 +315,10 @@ MOCK_P3_INCIDENT: Dict[str, Any] = {
     "timeline": [],
     "isNovel": False,
     "memoryUsed": True,
+    "memory_used": True,
 }
 
+# 2. Resolved Incidents & 5. Memory Leak & 8. Novel Incident
 MOCK_RESOLVED_INCIDENTS: List[Dict[str, Any]] = [
     {
         "id": "INC-2026-0928-04",
@@ -218,6 +336,7 @@ MOCK_RESOLVED_INCIDENTS: List[Dict[str, Any]] = [
         "resolved_at": "2026-09-28T18:32:00Z",
         "affectedUsers": 8400,
         "affected_users": 8400,
+        "outcome": "worked",
         "isNovel": True,
         "is_novel": True,
         "memoryUsed": True,
@@ -239,6 +358,7 @@ MOCK_RESOLVED_INCIDENTS: List[Dict[str, Any]] = [
         "resolved_at": "2026-09-27T09:24:00Z",
         "affectedUsers": 3200,
         "affected_users": 3200,
+        "outcome": "worked",
         "isNovel": False,
         "is_novel": False,
         "memoryUsed": True,
@@ -248,16 +368,18 @@ MOCK_RESOLVED_INCIDENTS: List[Dict[str, Any]] = [
 
 MOCK_INCIDENTS: List[Dict[str, Any]] = [
     MOCK_ACTIVE_INCIDENT,
+    MOCK_BAD_DEPLOY_INCIDENT,
     MOCK_P2_INCIDENT,
     MOCK_P3_INCIDENT,
     *MOCK_RESOLVED_INCIDENTS,
 ]
 
+# All 5 Required Outage Scenarios
 MOCK_SIMULATION_SCENARIOS: List[Dict[str, Any]] = [
     {
         "id": "scenario-db-pool",
         "name": "Database Connection Pool Saturation",
-        "description": "Simulates a sudden surge of checkout requests exhausting payments-db connections.",
+        "description": "Simulates sudden checkout request surge exhausting payments-db connections and timing out active checkouts.",
         "service": "payments-db",
         "expectedSeverity": "P1",
         "expected_severity": "P1",
@@ -268,8 +390,8 @@ MOCK_SIMULATION_SCENARIOS: List[Dict[str, Any]] = [
     },
     {
         "id": "scenario-cache-stampede",
-        "name": "Redis Cache Stampede",
-        "description": "Simulates concurrent cache key expiration flooding backend database with duplicate queries.",
+        "name": "Redis Token Cache Stampede",
+        "description": "Simulates simultaneous cache key TTL expiration flooding primary PostgreSQL cluster with duplicate authentication queries.",
         "service": "auth-service",
         "expectedSeverity": "P2",
         "expected_severity": "P2",
@@ -280,20 +402,32 @@ MOCK_SIMULATION_SCENARIOS: List[Dict[str, Any]] = [
     },
     {
         "id": "scenario-memory-leak",
-        "name": "Application Memory Leak (Bad Deployment)",
-        "description": "Simulates container out-of-memory crash loops caused by unbounded state retention.",
+        "name": "Application Memory Leak",
+        "description": "Simulates uncollected JSON payloads in worker routine leading to progressive heap exhaustion and pod OOMKills.",
         "service": "order-processor",
         "expectedSeverity": "P1",
         "expected_severity": "P1",
-        "symptoms": "OOMKilled pods restarting in order-processor deployment",
+        "symptoms": "OOMKilled pods restarting in order-processor deployment, memory > 95%",
         "expectedMatchingIncident": "INC-076",
         "expected_matching_incident": "INC-076",
         "metrics": {"restarts": 14, "memory_usage_pct": 98.4, "dropped_events": 680},
     },
     {
+        "id": "scenario-bad-deployment",
+        "name": "Bad Deployment (Canary Regression)",
+        "description": "Simulates canary release introducing faulty upstream routing configuration resulting in immediate HTTP 502 spikes.",
+        "service": "web-gateway",
+        "expectedSeverity": "P1",
+        "expected_severity": "P1",
+        "symptoms": "HTTP 502 Bad Gateway rate > 25%, upstream connection resets",
+        "expectedMatchingIncident": "INC-062",
+        "expected_matching_incident": "INC-062",
+        "metrics": {"error_rate": 0.28, "canary_traffic_pct": 20.0, "latency_p99_ms": 5200},
+    },
+    {
         "id": "scenario-novel-outage",
-        "name": "Novel Upstream Partner TLS Hang",
-        "description": "Simulates a novel failure pattern where upstream gateway TLS renegotiation stalls indefinitely.",
+        "name": "Novel Upstream Third-Party Gateway TLS Hang",
+        "description": "Simulates a first-time novel failure where external shipping gateway TLS handshake hangs indefinitely without read timeout.",
         "service": "shipping-gateway",
         "expectedSeverity": "P2",
         "expected_severity": "P2",

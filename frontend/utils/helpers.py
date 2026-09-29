@@ -78,3 +78,10 @@ def get_status_color(status: str) -> str:
     elif st == "fix_failed":
         return "#ef4444"  # Red
     return "#94a3b8"
+
+
+def navigate_to(page: str) -> None:
+    """Safely navigate to another page without violating Streamlit widget state lifecycle."""
+    import streamlit as st
+    st.session_state["_nav_destination"] = page
+    st.rerun()

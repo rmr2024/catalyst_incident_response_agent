@@ -28,7 +28,7 @@ try:
     from models import Incident, Recommendation, SimilarIncident, SimulationResponse, SimulationScenario
 except ImportError:
     from types import Incident, Recommendation, SimilarIncident, SimulationResponse, SimulationScenario
-from utils.helpers import format_timestamp, get_severity_color, get_status_color
+from utils.helpers import format_timestamp, get_severity_color, get_status_color, navigate_to
 
 
 def _get_severity_indicator(severity: str) -> str:
@@ -58,7 +58,16 @@ def render_simulator():
     )
 
     # Fetch available simulation scenarios from API client
-    scenarios: List[SimulationScenario] = api_client.get_simulation_scenarios()
+    try:
+        scenarios: List[SimulationScenario] = api_client.get_simulation_scenarios() or []
+    except Exception as ex:
+        st.warning(f"Could not load simulation scenarios: {ex}")
+        scenarios = []
+
+    if not scenarios:
+        st.info("⚠️ No simulation scenarios currently available.")
+        return
+
     scenario_names = [s.name for s in scenarios]
 
     # Initialize Session State
@@ -84,16 +93,16 @@ def render_simulator():
     with sel_col:
         st.markdown("### 1. Select Outage Scenario")
         current_idx = st.session_state.get("selected_scenario_index", 0)
-        if current_idx >= len(scenarios):
+        if current_idx >= len(scenarios) or current_idx < 0:
             current_idx = 0
 
-        selected_idx = st.selectbox(
+        selected_name = st.selectbox(
             "Available Pre-configured Scenarios",
-            range(len(scenarios)),
+            options=scenario_names,
             index=current_idx,
-            format_func=lambda i: f"{i+1}. {scenario_names[i]} ({scenarios[i].service})",
             key="sim_scenario_dropdown",
         )
+        selected_idx = scenario_names.index(selected_name) if selected_name in scenario_names else 0
         st.session_state["selected_scenario_index"] = selected_idx
         selected_scenario: SimulationScenario = scenarios[selected_idx]
         st.session_state["selected_scenario"] = selected_scenario
@@ -101,6 +110,12 @@ def render_simulator():
     with toggle_col:
         st.markdown("### 2. Memory State")
         current_mem = st.session_state.get("memory_enabled", True)
+
+        if (
+            "sim_memory_toggle" in st.session_state
+            and st.session_state["sim_memory_toggle"] != current_mem
+        ):
+            st.session_state["sim_memory_toggle"] = current_mem
 
         new_mem = st.toggle(
             "🧠 Memory ON / Memory OFF",
@@ -111,6 +126,8 @@ def render_simulator():
 
         if new_mem != current_mem:
             st.session_state["memory_enabled"] = new_mem
+            if "sidebar_memory_toggle" in st.session_state:
+                st.session_state["sidebar_memory_toggle"] = new_mem
             api_client.set_memory_status(new_mem)
             st.toast(f"Hindsight memory {'enabled' if new_mem else 'disabled'}")
             st.rerun()
@@ -167,7 +184,7 @@ def render_simulator():
     # ---------------------------------------------------------
     # Action Controls: Run Simulation & Reset
     # ---------------------------------------------------------
-    act_col1, act_col2, _ = st.columns([1.5, 1.2, 2.5])
+    act_col1, act_col2, act_col3, _ = st.columns([1.5, 1.3, 1.2, 1.8])
 
     with act_col1:
         run_clicked = st.button(
@@ -175,6 +192,7 @@ def render_simulator():
             type="primary",
             use_container_width=True,
             help="Inject selected simulated failure into the incident response pipeline",
+            key="sim_run_btn",
         )
 
     with act_col2:
@@ -183,7 +201,12 @@ def render_simulator():
             type="secondary",
             use_container_width=True,
             help="Reset simulation state, scenario selection, and clear results",
+            key="sim_reset_btn",
         )
+
+    with act_col3:
+        if st.button("📊 Dashboard ←", use_container_width=True, help="Switch back to Incident Operations Dashboard", key="sim_nav_dashboard_btn"):
+            navigate_to("Dashboard")
 
     # Handle Reset Simulation
     if reset_clicked:
@@ -193,6 +216,8 @@ def render_simulator():
             st.session_state["sim_feedback"] = None
             st.session_state["selected_scenario_index"] = 0
             st.session_state["selected_scenario"] = scenarios[0]
+            if "sim_scenario_dropdown" in st.session_state:
+                st.session_state["sim_scenario_dropdown"] = scenario_names[0]
             st.toast("Simulation sandbox reset successfully.", icon="🔄")
             st.rerun()
 
@@ -292,7 +317,7 @@ def render_simulator():
             # 7. Display Service
             st.metric(label="Target Service", value=inc.service)
         with m_col4:
-            conf_val = f"{rec.confidence * 100:.0f}%" if rec else "N/A"
+            conf_val = f"{rec.confidence * 100:.0f}%" if rec and rec.confidence is not None else "N/A"
             conf_delta = "+40% via Memory" if mem_is_active else "Low (No Memory)"
             st.metric(label="Hypothesis Confidence", value=conf_val, delta=conf_delta)
 
@@ -302,7 +327,7 @@ def render_simulator():
 
         # 9. Display Likely Root Cause
         with st.container():
-            root_cause_display = inc.root_cause or (rec.hypothesis if rec else "Under Investigation")
+            root_cause_display = inc.root_cause or (rec.hypothesis if rec and rec.hypothesis else "Under Investigation")
             st.markdown(f"**🎯 Likely Root Cause:** `{root_cause_display}`")
 
         st.markdown("---")
@@ -316,11 +341,11 @@ def render_simulator():
             # 11. Display Recommendation & Runbook
             st.markdown("#### 📖 Remediation Recommendation")
             if rec:
-                st.markdown(f"**Top Hypothesis:** `{rec.hypothesis}`")
-                st.markdown(f"**Recommended Runbook:** `{rec.runbook}`")
+                st.markdown(f"**Top Hypothesis:** `{rec.hypothesis or 'Under Investigation'}`")
+                st.markdown(f"**Recommended Runbook:** `{rec.runbook or 'Standard Runbook'}`")
 
                 st.markdown("**Action Procedure Steps:**")
-                for s_idx, step in enumerate(rec.recommended_steps, 1):
+                for s_idx, step in enumerate(rec.recommended_steps or [], 1):
                     st.markdown(f"{s_idx}. {step}")
 
                 # Previous Successful Fix (Requirement: Display Previous successful fix when Memory ON)
@@ -377,10 +402,9 @@ def render_simulator():
         # Quick navigation to War Room
         nav_col1, nav_col2 = st.columns([1.5, 2])
         with nav_col1:
-            if st.button("Enter War Room for Simulated Incident 🚨", type="primary", use_container_width=True):
+            if st.button("Enter War Room for Simulated Incident 🚨", type="primary", use_container_width=True, key="sim_enter_war_room_btn"):
                 st.session_state["current_incident"] = inc
-                st.session_state["selected_page"] = "War Room"
-                st.rerun()
+                navigate_to("War Room")
 
 
 if __name__ == "__main__":

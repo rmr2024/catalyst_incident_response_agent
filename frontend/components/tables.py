@@ -6,7 +6,10 @@ from typing import List
 import pandas as pd
 import streamlit as st
 
-from types import Incident, SimilarIncident, TimelineEvent
+try:
+    from models import Incident, SimilarIncident, TimelineEvent
+except ImportError:
+    from types import Incident, SimilarIncident, TimelineEvent
 from utils.helpers import format_timestamp
 
 

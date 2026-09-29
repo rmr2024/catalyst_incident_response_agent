@@ -6,7 +6,10 @@ from typing import Optional
 import streamlit as st
 
 from components.badges import render_outcome_badge, render_severity_badge, render_status_badge
-from types import Incident, Recommendation, SimulationScenario
+try:
+    from models import Incident, Recommendation, SimulationScenario
+except ImportError:
+    from types import Incident, Recommendation, SimulationScenario
 from utils.helpers import format_timestamp
 
 
@@ -73,12 +76,18 @@ def render_recommendation_card(rec: Optional[Recommendation]):
         return
 
     with st.container():
+        conf_str = f"{rec.confidence * 100:.0f}%" if rec.confidence is not None else "N/A"
+        hyp_str = rec.hypothesis or "Under Investigation"
+        runbook_str = rec.runbook or "Standard Triage"
+        steps = rec.recommended_steps or []
+        avoid_list = rec.failed_before or []
+
         st.markdown(
             f"""
             <div style="border-left: 4px solid #8b5cf6; background: rgba(30, 41, 59, 0.6); padding: 12px; border-radius: 4px; margin-bottom: 12px;">
                 <div style="font-size: 11px; text-transform: uppercase; color: #a78bfa; font-weight: 700; letter-spacing: 0.5px;">Top Root Cause Hypothesis</div>
-                <div style="font-size: 14px; font-weight: 600; color: #f8fafc; margin-top: 4px;">{rec.hypothesis}</div>
-                <div style="font-size: 12px; color: #94a3b8; margin-top: 2px;">Confidence Score: <strong>{rec.confidence * 100:.0f}%</strong></div>
+                <div style="font-size: 14px; font-weight: 600; color: #f8fafc; margin-top: 4px;">{hyp_str}</div>
+                <div style="font-size: 12px; color: #94a3b8; margin-top: 2px;">Confidence Score: <strong>{conf_str}</strong></div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -87,12 +96,15 @@ def render_recommendation_card(rec: Optional[Recommendation]):
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("**📋 Recommended Steps:**")
-            for idx, step in enumerate(rec.recommended_steps, 1):
-                st.markdown(f"{idx}. {step}")
+            if steps:
+                for idx, step in enumerate(steps, 1):
+                    st.markdown(f"{idx}. {step}")
+            else:
+                st.caption("No specific automated action steps defined.")
 
         with col2:
-            st.markdown(f"**📖 Recommended Runbook:** `{rec.runbook}`")
-            if rec.failed_before:
+            st.markdown(f"**📖 Recommended Runbook:** `{runbook_str}`")
+            if avoid_list:
                 st.markdown("**⚠️ What to AVOID (Past Failed Attempts):**")
-                for avoid in rec.failed_before:
+                for avoid in avoid_list:
                     st.markdown(f"- ❌ *{avoid}*")

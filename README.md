@@ -1,6 +1,6 @@
 # Incident Response Agent
 
-A hackathon-scale incident response application with a FastAPI backend and a Streamlit frontend. It ingests incident alerts, records investigation and remediation activity, and provides incident analytics and post-mortems. The application stores incident data in SQLite and exposes a REST API with server-sent event streams.
+A incident response application with a FastAPI backend and a Streamlit frontend. It ingests incident alerts, records investigation and remediation activity, and provides incident analytics and post-mortems. The application stores incident data in SQLite and exposes a REST API with server-sent event streams.
 
 ## Current Architecture
 

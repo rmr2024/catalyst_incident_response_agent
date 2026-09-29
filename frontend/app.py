@@ -39,6 +39,20 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Hide Streamlit's default multi-page auto-navigation to prevent duplicate sidebar entries
+st.markdown(
+    """
+    <style>
+        [data-testid="stSidebarNav"],
+        section[data-testid="stSidebarNav"],
+        div[data-testid="stSidebarNav"] {
+            display: none !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Handle pending programmatic navigation before widget creation
 if "_nav_destination" in st.session_state and st.session_state["_nav_destination"]:
     st.session_state["selected_page"] = st.session_state.pop("_nav_destination")

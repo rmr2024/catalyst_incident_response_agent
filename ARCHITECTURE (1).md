@@ -15,7 +15,7 @@ five major layers:
 User
  |
  v
-React Frontend
+Streamlit Frontend
  |
  | HTTP / SSE
  v
@@ -43,19 +43,19 @@ SQLite               Agent Layer
 
 Technology:
 
--   React
--   Vite
--   TypeScript
--   Tailwind CSS
--   Recharts where analytics are implemented
+-   Streamlit (Python)
+-   Streamlit Multipage Architecture (`pages/` directory)
+-   Custom CSS & Streamlit components
+-   Altair / Plotly where analytics and charts are implemented
+-   httpx / requests client for FastAPI communication
 
 Primary screens:
 
--   Dashboard
--   Simulator
--   War Room
--   Post-Mortem
--   Analytics
+-   Dashboard (`1_Dashboard.py`)
+-   Simulator (`2_Simulator.py`)
+-   War Room (`3_War_Room.py`)
+-   Post-Mortem (`4_Postmortem.py`)
+-   Analytics (`5_Analytics.py`)
 
 The frontend is responsible for presentation and user interaction. It
 should not contain incident investigation logic.
@@ -297,12 +297,12 @@ For the hackathon:
 A local Docker Compose setup may contain:
 
 ``` text
-frontend
-backend
+frontend (Streamlit, port 8501)
+backend (FastAPI, port 8000)
 hindsight
 ```
 
 SQLite can remain local to the backend for the hackathon.
 
-The project should also support running frontend and backend separately
+The project should also support running frontend (`streamlit run frontend/app.py`) and backend (`uvicorn backend.main:app`) separately
 during development.

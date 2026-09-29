@@ -101,7 +101,7 @@ After approval, the post-mortem is retained in Hindsight.
 
 ### F10. Incident Dashboard
 
-Displays:
+Implemented as an interactive Streamlit dashboard displaying:
 
 -   active incidents
 -   resolved incidents
@@ -112,14 +112,14 @@ Displays:
 
 ### F11. Simulation Mode and Memory ON/OFF
 
-Provides predefined outage scenarios.
+Provided via a dedicated Streamlit Simulator page with predefined outage scenarios.
 
 The memory toggle allows the same incident to be investigated with and
 without historical memory.
 
 ### F12. Visible Memory Calls
 
-Displays Hindsight activity in the UI:
+Displays Hindsight activity in the Streamlit UI (War Room):
 
 ``` text
 RECALL

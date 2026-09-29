@@ -16,9 +16,9 @@ The project can be divided into six parallel workstreams.
   P3                      Data and Tools          Seed data, scenarios,
                                                   simulator, mock tools
 
-  P4                      Frontend                Dashboard and simulator
+  P4                      Streamlit Frontend      Dashboard and simulator
 
-  P5                      War Room                Investigation and
+  P5                      Streamlit War Room      Investigation and
                                                   recommendation UI
 
   P6                      Post-Mortem and         Post-mortem, analytics,
@@ -153,45 +153,45 @@ Create mock:
 
 Run every scenario end-to-end.
 
-## P4 --- Frontend Shell
+## P4 --- Streamlit Frontend Shell & Dashboard
 
 ### 0:00--0:30
 
 Create:
 
--   Vite app
--   Tailwind
--   router
--   TypeScript types
--   API client
--   mock fixtures
+-   Streamlit app entry point (`app.py` & multipage structure)
+-   API client module (`api_client.py` using `httpx` or `requests`)
+-   Theme configuration (`.streamlit/config.toml`)
+-   Session state management utilities (`st.session_state`)
+-   Mock fixtures for offline testing
 
 ### 0:30--2:00
 
 Build Dashboard:
 
--   incident feed
--   severity badges
--   KPI cards
--   trigger alert button
+-   incident feed (`st.dataframe` or structured container cards)
+-   severity badges (P1/P2/P3 pill indicators)
+-   KPI cards (`st.metric` for active incidents, MTTR, etc.)
+-   quick trigger alert form (`st.form`)
 
 ### 2:00--3:00
 
 Build Simulator:
 
--   scenario selection
--   memory ON/OFF
--   reset
+-   scenario selector (`st.selectbox`)
+-   memory ON/OFF toggle (`st.toggle`)
+-   environment reset button (`st.button`)
+-   scenario trigger and dispatch to backend
 
 ### 3:00--3:30
 
-Disable mocks and fix API contract mismatches.
+Connect API client to backend endpoints and verify payload schemas.
 
 ### 3:30+
 
-Global styling and integration.
+Streamlit custom CSS styling and responsive layout polish.
 
-## P5 --- War Room
+## P5 --- War Room (Streamlit)
 
 The War Room is the primary demonstration page.
 
@@ -199,44 +199,44 @@ The War Room is the primary demonstration page.
 
 Build:
 
--   alert summary
--   logs
--   metrics
--   deployment context
+-   alert summary card and metadata
+-   system logs viewer (`st.code` inside an expander)
+-   metrics visualization (`st.line_chart` or Altair)
+-   recent deployment context panel
 
 ### 1:30--2:30
 
 Build:
 
--   ranked hypotheses
--   recommended steps
--   runbook
--   failed-fix warnings
--   similar incident panel
--   evidence explanation
+-   ranked hypotheses (`st.expander` with confidence score badges)
+-   recommended remediation steps
+-   runbook recommendation display
+-   failed-fix warning callouts (`st.error` / `st.warning`)
+-   similar incident list with historical similarity score
+-   evidence explanation breakdown
 
 ### 2:30--3:30
 
 Build:
 
--   live timeline
--   memory calls panel
--   Accept/Edit/Reject
--   Resolve button
+-   live incident timeline and activity stream
+-   visible memory calls panel (RECALL and RETAIN events)
+-   interactive approval controls: Accept / Edit / Reject (`st.button`, `st.form`)
+-   Resolve and Verify trigger button
 
 ### 3:30--4:00
 
-Add novel-incident state.
+Add novel-incident banner and fallback UI state.
 
 ### 4:00+
 
-Polish the demonstration flow.
+Polish the Streamlit demonstration flow and UX transitions.
 
 ## P6 --- Post-Mortem and Delivery
 
 ### 0:00--0:45
 
-Create Docker Compose and README.
+Create Docker Compose (FastAPI backend + Streamlit frontend) and README.
 
 ### 0:45--2:15
 
@@ -245,7 +245,7 @@ confirmation.
 
 ### 2:15--3:30
 
-Implement optional analytics.
+Implement optional analytics with Streamlit charts (Plotly / Altair).
 
 ### 3:30--4:30
 

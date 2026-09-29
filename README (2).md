@@ -123,7 +123,7 @@ The application database and Hindsight have different responsibilities:
 
   FastAPI                             Backend orchestration
 
-  React                               Dashboard and incident workflow
+  Streamlit                           Dashboard and incident workflow
   -----------------------------------------------------------------------
 
 ## Features
@@ -163,11 +163,11 @@ optional features.
   -----------------------------------------------------------------------
   Layer                   Technology              Purpose
   ----------------------- ----------------------- -----------------------
-  Frontend                React + Vite +          Incident dashboard and
-                          TypeScript              workflow UI
+  Frontend                Streamlit (Python)      Incident dashboard and
+                                                  workflow UI
 
-  Styling                 Tailwind CSS            Rapid interface
-                                                  development
+  Styling / Components    Streamlit Components    Interactive dashboards,
+                          + Custom CSS            incident war room & forms
 
   Backend                 Python + FastAPI        API and orchestration
 
@@ -182,8 +182,8 @@ optional features.
 
   Application DB          SQLite + SQLModel       Application state only
 
-  Realtime                Server-Sent Events      Live incident timeline
-                          (SSE)                   
+  Realtime                SSE / Auto-refresh      Live incident timeline
+                          polling                 in Streamlit
 
   HTTP                    httpx                   Direct HTTP
                                                   integrations
@@ -191,8 +191,8 @@ optional features.
   Demo data               JSON seed files         Historical incidents
                                                   and scenarios
 
-  Charts                  Recharts                Optional dashboard
-                                                  analytics
+  Charts                  Streamlit Native /      Optional dashboard
+                          Altair / Plotly         analytics
 
   Version control         Git + GitHub            Team collaboration
   -----------------------------------------------------------------------
@@ -219,7 +219,7 @@ human approval before execution.
 
 ``` text
                     +----------------------+
-                    |       React UI       |
+                    |       Streamlit UI   |
                     | Dashboard / War Room |
                     | Simulator / Postmortem|
                     +----------+-----------+
@@ -443,18 +443,21 @@ incident-agent/
 |   +-- seed_memory.py
 |
 +-- frontend/
-|   +-- package.json
-|   +-- src/
-|       +-- App.tsx
-|       +-- api/
-|       +-- types.ts
-|       +-- components/
-|       +-- pages/
-|           +-- Dashboard/
-|           +-- Simulator/
-|           +-- WarRoom/
-|           +-- Postmortem/
-|           +-- Analytics/
+|   +-- app.py
+|   +-- requirements.txt
+|   +-- api_client.py
+|   +-- .streamlit/
+|   |   +-- config.toml
+|   +-- components/
+|   |   +-- header.py
+|   |   +-- timeline.py
+|   |   +-- memory_card.py
+|   +-- pages/
+|       +-- 1_Dashboard.py
+|       +-- 2_Simulator.py
+|       +-- 3_War_Room.py
+|       +-- 4_Postmortem.py
+|       +-- 5_Analytics.py
 |
 +-- docs/
 |   +-- ARCHITECTURE.md
@@ -544,8 +547,8 @@ The implementation is intentionally constrained.
 
 ### Priority 2
 
--   Dashboard polish
--   Live SSE timeline
+-   Streamlit dashboard polish
+-   Live SSE / Auto-refresh timeline in Streamlit
 -   Memory activity panel
 -   Memory ON/OFF comparison
 
@@ -606,8 +609,8 @@ Recommended ownership:
 -   P1: AI and Hindsight integration
 -   P2: FastAPI backend and application database
 -   P3: Seed data, simulator, and tools
--   P4: Frontend shell, dashboard, and simulator
--   P5: War Room / investigation UI
+-   P4: Streamlit frontend shell, dashboard, and simulator
+-   P5: Streamlit War Room / investigation UI
 -   P6: Post-mortem, analytics, Docker, documentation, and demo content
 
 See `docs/DEVELOPMENT_PLAN.md` for the detailed six-hour plan.

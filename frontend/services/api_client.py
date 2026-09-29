@@ -19,6 +19,7 @@ from mocks.mock_data import (
     MOCK_SIMULATION_SCENARIOS,
     MOCK_STATS,
     MOCK_TIMELINE_EVENTS,
+    generate_simulated_incident,
 )
 try:
     from models import (
@@ -333,21 +334,36 @@ class ApiClient:
                     if res.status_code in (200, 201):
                         self._is_live = True
                         data = res.json()
+                        sim_inc = None
+                        if data.get("incident"):
+                            sim_inc = Incident.model_validate(data["incident"])
+                        elif data.get("incident_id"):
+                            sim_inc = self.get_incident(data["incident_id"])
                         return SimulationResponse(
                             success=True,
                             incident_id=data.get("incident_id") or scenario_id,
-                            status=data.get("status", "executing"),
+                            status=data.get("status", "investigating"),
                             message="Simulation execution initiated on backend",
+                            incident=sim_inc,
+                            memory_enabled=memory_enabled,
                         )
             except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
                 self._last_error = str(e)
                 self._is_live = False
 
+        # Fallback / mock mode: generate simulated incident matching scenario and memory toggle
+        raw_inc = generate_simulated_incident(scenario_id, memory_enabled=memory_enabled)
+        # Prepend to MOCK_INCIDENTS so it is accessible across the console
+        MOCK_INCIDENTS.insert(0, raw_inc)
+        sim_incident = Incident.model_validate(raw_inc)
+
         return SimulationResponse(
             success=True,
-            incident_id=scenario_id,
-            status="executing",
+            incident_id=sim_incident.id,
+            status=sim_incident.status,
             message=f"Simulation running (Memory {'ON' if memory_enabled else 'OFF'})",
+            incident=sim_incident,
+            memory_enabled=memory_enabled,
         )
 
     # 5. reset_simulation()
@@ -364,6 +380,8 @@ class ApiClient:
                 self._last_error = str(e)
                 self._is_live = False
 
+        # Filter out temporary simulation incidents from mock incidents
+        MOCK_INCIDENTS[:] = [i for i in MOCK_INCIDENTS if not str(i.get("id", "")).startswith("SIM-")]
         return {"success": True}
 
     # 6. get_memory_status()

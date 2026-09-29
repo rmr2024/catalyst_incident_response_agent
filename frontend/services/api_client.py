@@ -16,6 +16,7 @@ from mocks.mock_data import (
     MOCK_ACTIVE_INCIDENT,
     MOCK_DEMO_ALERT,
     MOCK_INCIDENTS,
+    MOCK_SIMILAR_INCIDENTS,
     MOCK_SIMULATION_SCENARIOS,
     MOCK_STATS,
     MOCK_TIMELINE_EVENTS,
@@ -71,6 +72,11 @@ API_ENDPOINTS = {
     "INCIDENT_SIMULATE": lambda id: f"/incidents/{id}/simulate",
     "RESET_SIMULATION": "/reset",
     "SETTINGS_MEMORY": "/settings/memory",
+    # War Room (P5)
+    "INCIDENT_EVENTS": lambda id: f"/incidents/{id}/events",
+    "INCIDENT_MEMORY_CALLS": lambda id: f"/incidents/{id}/memory-calls",
+    "INCIDENT_FEEDBACK": lambda id: f"/incidents/{id}/feedback",
+    "INCIDENT_RESOLVE": lambda id: f"/incidents/{id}/resolve",
 }
 
 
@@ -506,6 +512,341 @@ class ApiClient:
                 self._is_live = False
 
         return [TimelineEvent.model_validate(ev) for ev in MOCK_TIMELINE_EVENTS]
+
+    # ------------------------------------------------------------------
+    # War Room support (P5)
+    #
+    # These return raw JSON payloads rather than dashboard-contract models,
+    # because the War Room validates the backend investigation contract
+    # (backend/db/models.py IncidentDetail) which is a different shape.
+    # ------------------------------------------------------------------
+
+    def get_incident_payload(self, incident_id: str) -> Optional[Dict[str, Any]]:
+        """Raw GET /incidents/{id} payload, shaped for IncidentDetail validation."""
+        if not self.force_mocks and self.is_backend_live:
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    res = client.get(f"{self.base_url}{API_ENDPOINTS['INCIDENT_BY_ID'](incident_id)}")
+                    if res.status_code == 200:
+                        self._is_live = True
+                        raw = res.json()
+                        if isinstance(raw, dict):
+                            return raw
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
+                self._last_error = str(e)
+                self._is_live = False
+
+        return self._mock_incident_payload(incident_id)
+
+    def _mock_incident_payload(self, incident_id: str) -> Optional[Dict[str, Any]]:
+        """Build a War Room-shaped payload from dashboard-contract mock data.
+
+        The mocks use the dashboard contract (title/symptoms/recommendation.recommended_steps)
+        whereas the War Room validates the backend investigation contract
+        (message/top_hypothesis/recommendation.hypotheses).
+        """
+        for inc in MOCK_INCIDENTS:
+            if inc.get("id") != incident_id:
+                continue
+
+            message = inc.get("message") or inc.get("title") or inc.get("symptoms") or ""
+            started_at = (
+                inc.get("created_at")
+                or inc.get("started_at")
+                or inc.get("startedAt")
+                or "2026-09-29T11:30:00Z"
+            )
+
+            recommendation = inc.get("recommendation")
+            if not isinstance(recommendation, dict) or "hypotheses" not in recommendation:
+                hypothesis = inc.get("top_hypothesis") or inc.get("root_cause") or message
+                recommendation = {
+                    "hypotheses": [
+                        {
+                            "cause": hypothesis or "Investigating cause",
+                            "confidence": inc.get("top_confidence", 0.9),
+                            "evidence_ids": list(recommendation.get("evidence", []) or []),
+                        }
+                    ],
+                    "steps": [str(s) for s in (recommendation.get("recommended_steps") or [])] or [
+                        "Check connection pool metrics",
+                        "Apply the runbook mitigation",
+                    ],
+                    "runbook": recommendation.get("runbook") or "DB-POOL-RECOVERY",
+                    "avoid": [str(a) for a in (recommendation.get("failed_before") or [])],
+                    "whats_different": recommendation.get("whats_different", ""),
+                    "is_novel": recommendation.get("is_novel", inc.get("is_novel", False)),
+                    "similar": [
+                        self._as_memory_hit(item)
+                        for item in (
+                            recommendation.get("similar")
+                            or inc.get("similar_incidents")
+                            or MOCK_SIMILAR_INCIDENTS
+                        )
+                    ],
+                    "needs_approval": recommendation.get("needs_approval", True),
+                }
+
+            return {
+                "id": inc.get("id", incident_id),
+                "service": inc.get("service", "unknown-service"),
+                "message": message,
+                "severity": inc.get("severity", "P3"),
+                "severity_reason": inc.get("severity_reason", ""),
+                "source": inc.get("source", "manual"),
+                "status": inc.get("status", "investigating"),
+                "headline": inc.get("title") or message,
+                "is_novel": inc.get("is_novel", inc.get("isNovel", False)),
+                "memory_used": inc.get("memory_used", inc.get("memoryUsed", True)),
+                "top_hypothesis": inc.get("root_cause") or inc.get("rootCause"),
+                "top_confidence": inc.get("top_confidence"),
+                "suggestion_verdict": inc.get("suggestion_verdict"),
+                "outcome": inc.get("outcome"),
+                "resolution": inc.get("resolution"),
+                "created_at": started_at,
+                "resolved_at": inc.get("resolved_at") or inc.get("resolvedAt"),
+                "ttr_seconds": inc.get("ttr_seconds"),
+                "alert": {
+                    "service": inc.get("service", "unknown-service"),
+                    "message": message,
+                    "severity": inc.get("severity"),
+                    "timestamp": started_at,
+                    "metrics": inc.get("metrics", {}),
+                },
+                "recommendation": recommendation,
+                "smart_alert": inc.get("smart_alert"),
+                "actions": inc.get("actions", []),
+                "events": self._as_agent_events(inc.get("timeline") or [], inc.get("id", incident_id)),
+            }
+        return None
+
+    @staticmethod
+    def _as_agent_events(timeline: List[Dict[str, Any]], incident_id: str) -> List[Dict[str, Any]]:
+        """Translate dashboard timeline rows into the backend AgentEvent shape."""
+        kind_map = {"agent": "agent", "memory": "memory", "human": "human"}
+        events: List[Dict[str, Any]] = []
+        for row in timeline:
+            if not isinstance(row, dict):
+                continue
+            kind = str(row.get("type") or row.get("kind") or "agent").lower()
+            events.append(
+                {
+                    "incident_id": row.get("incident_id") or incident_id,
+                    "kind": kind_map.get(kind, "agent"),
+                    "step": row.get("message") or row.get("step") or "Timeline step",
+                    "detail": row.get("detail", ""),
+                    "ts": row.get("timestamp") or row.get("ts"),
+                }
+            )
+        return events
+
+    def get_similar_incidents(self, incident_id: str) -> List[Dict[str, Any]]:
+        """Similar historical incidents, derived from the incident recommendation."""
+        payload = self.get_incident_payload(incident_id) or {}
+        recommendation = payload.get("recommendation") or {}
+        similar = recommendation.get("similar")
+        if isinstance(similar, list) and similar:
+            return [self._as_memory_hit(item) for item in similar if isinstance(item, dict)]
+        return [self._as_memory_hit(item) for item in MOCK_SIMILAR_INCIDENTS]
+
+    @staticmethod
+    def _as_memory_hit(item: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize a similar-incident record into the MemoryHit shape.
+
+        The dashboard contract uses incidentId/similarity/rootCause/resolution,
+        while MemoryHit expects id/text/score/incident_id/outcome.
+        """
+        if "text" in item:
+            return item
+        incident_ref = item.get("incident_id") or item.get("incidentId") or item.get("id") or ""
+        cause = item.get("root_cause") or item.get("rootCause") or ""
+        resolution = item.get("resolution") or ""
+        text = cause if not resolution else f"{cause} Resolution: {resolution}"
+        return {
+            "id": incident_ref,
+            "incident_id": incident_ref,
+            "text": text or incident_ref,
+            "score": item.get("similarity") if item.get("similarity") is not None else item.get("score"),
+            "outcome": item.get("outcome"),
+        }
+
+    def get_incident_events(self, incident_id: str, after: int = 0) -> List[Dict[str, Any]]:
+        """Agent/memory/human events recorded after the given offset."""
+        if not self.force_mocks and self.is_backend_live:
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    res = client.get(
+                        f"{self.base_url}{API_ENDPOINTS['INCIDENT_EVENTS'](incident_id)}",
+                        params={"after": after},
+                    )
+                    if res.status_code == 200:
+                        self._is_live = True
+                        items = res.json()
+                        if isinstance(items, list):
+                            return [item for item in items if isinstance(item, dict)]
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
+                self._last_error = str(e)
+                self._is_live = False
+
+        payload = self.get_incident_payload(incident_id) or {}
+        events = payload.get("events") or []
+        return [e for e in events[after:] if isinstance(e, dict)]
+
+    def get_memory_calls(self, incident_id: str) -> List[Dict[str, Any]]:
+        """Hindsight memory RECALL/RETAIN log for an incident."""
+        if not self.force_mocks and self.is_backend_live:
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    res = client.get(f"{self.base_url}{API_ENDPOINTS['INCIDENT_MEMORY_CALLS'](incident_id)}")
+                    if res.status_code == 200:
+                        self._is_live = True
+                        items = res.json()
+                        if isinstance(items, list):
+                            return [item for item in items if isinstance(item, dict)]
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
+                self._last_error = str(e)
+                self._is_live = False
+
+        return [
+            {
+                "incident_id": incident_id,
+                "kind": "memory",
+                "step": "RECALL",
+                "detail": "Searched long-term memory for prior incidents on this service.",
+                "ts": "2026-09-29T11:30:12Z",
+            },
+            {
+                "incident_id": incident_id,
+                "kind": "memory",
+                "step": "RETAIN",
+                "detail": "Recorded investigation findings for future recall.",
+                "ts": "2026-09-29T11:41:03Z",
+            },
+        ]
+
+    def get_timeline_entries(self, incident_id: str) -> List[Dict[str, Any]]:
+        """Raw timeline rows (dicts) for the War Room renderer."""
+        if not self.force_mocks and self.is_backend_live:
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    res = client.get(f"{self.base_url}{API_ENDPOINTS['INCIDENT_TIMELINE'](incident_id)}")
+                    if res.status_code == 200:
+                        self._is_live = True
+                        items = res.json()
+                        if isinstance(items, list):
+                            return [item for item in items if isinstance(item, dict)]
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
+                self._last_error = str(e)
+                self._is_live = False
+
+        return [
+            {
+                "ts": ev.get("timestamp") or ev.get("ts"),
+                "source": "event",
+                "kind": ev.get("type") or ev.get("kind", "event"),
+                "title": ev.get("message") or ev.get("step", ""),
+                "detail": ev.get("detail", ""),
+            }
+            for ev in MOCK_TIMELINE_EVENTS
+        ]
+
+    def submit_feedback(self, incident_id: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """POST accept/edit/reject verdict to /incidents/{id}/feedback."""
+        if not self.force_mocks and self.is_backend_live:
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    res = client.post(
+                        f"{self.base_url}{API_ENDPOINTS['INCIDENT_FEEDBACK'](incident_id)}",
+                        json=payload,
+                    )
+                    if res.status_code in (200, 201):
+                        self._is_live = True
+                        self._last_error = None
+                        data = res.json()
+                        return data if isinstance(data, dict) else {"incident_id": incident_id}
+                    self._last_error = f"Feedback request failed ({res.status_code}): {res.text}"
+                    return None
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
+                self._last_error = str(e)
+                self._is_live = False
+                return None
+
+        action = payload.get("action", "accept")
+        status = "executing" if action in ("accept", "edit") else "rejected"
+        self._apply_mock_feedback(incident_id, action, payload.get("steps"))
+        return {"incident_id": incident_id, "status": status}
+
+    def _apply_mock_feedback(
+        self,
+        incident_id: str,
+        action: str,
+        steps: Optional[List[str]] = None,
+    ) -> None:
+        """Mutate mock incident state so the War Room reflects the verdict."""
+        for inc in MOCK_INCIDENTS:
+            if inc.get("id") != incident_id:
+                continue
+            if action == "rejected":
+                inc["status"] = "investigating"
+            else:
+                inc["status"] = "executing"
+                inc["suggestion_verdict"] = "accepted" if action == "accept" else "edited"
+                if steps:
+                    inc["recommended_steps"] = list(steps)
+            return
+
+    def resolve_incident(self, incident_id: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """POST an operator resolution outcome to /incidents/{id}/resolve."""
+        if not self.force_mocks and self.is_backend_live:
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    res = client.post(
+                        f"{self.base_url}{API_ENDPOINTS['INCIDENT_RESOLVE'](incident_id)}",
+                        json=payload,
+                    )
+                    if res.status_code in (200, 201):
+                        self._is_live = True
+                        self._last_error = None
+                        data = res.json()
+                        return data if isinstance(data, dict) else {"incident_id": incident_id}
+                    self._last_error = f"Resolve request failed ({res.status_code}): {res.text}"
+                    return None
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
+                self._last_error = str(e)
+                self._is_live = False
+                return None
+
+        self._apply_mock_resolution(incident_id, payload)
+        return {"incident_id": incident_id, "status": "resolved"}
+
+    def _apply_mock_resolution(self, incident_id: str, payload: Dict[str, Any]) -> None:
+        """Mark the mock incident resolved and reflect it in mock stats."""
+        for inc in MOCK_INCIDENTS:
+            if inc.get("id") != incident_id:
+                continue
+            inc["status"] = "resolved"
+            inc["outcome"] = payload.get("outcome", "worked")
+            if payload.get("resolution"):
+                inc["resolution"] = payload["resolution"]
+            break
+        MOCK_STATS["active"] = max(0, MOCK_STATS.get("active", 0) - 1)
+        MOCK_STATS["resolved_today"] = MOCK_STATS.get("resolved_today", 0) + 1
+
+    def post_alert(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Ingest a new alert via POST /alerts."""
+        if not self.force_mocks and self.is_backend_live:
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    res = client.post(f"{self.base_url}{API_ENDPOINTS['ALERTS']}", json=payload)
+                    if res.status_code in (200, 201):
+                        self._is_live = True
+                        data = res.json()
+                        return data if isinstance(data, dict) else {}
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
+                self._last_error = str(e)
+                self._is_live = False
+
+        return {"incident_id": "INC-NEW-MOCK", "status": "investigating"}
 
 
 # Shared singleton client instance

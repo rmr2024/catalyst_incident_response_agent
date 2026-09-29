@@ -4,7 +4,7 @@ Streamlit application root coordinating sidebar navigation, session state, and p
 Provides seamless navigation between:
 1. Dashboard (Fully functional)
 2. Simulator (Fully functional)
-3. War Room (Coming Soon)
+3. War Room (Fully functional)
 4. Post-Mortem (Coming Soon)
 5. Analytics (Coming Soon)
 Preserves memory_enabled, selected scenario, current incident, and simulation result in session_state.
@@ -29,6 +29,7 @@ from api_client import api_client
 from components.badges import render_memory_badge, render_severity_badge, render_status_badge, render_system_status_pill
 from pages.dashboard import render_dashboard
 from pages.simulator import render_simulator
+from pages.war_room import render_war_room
 from models import Incident, SimulationScenario
 from utils.theme import apply_theme, render_theme_toggle_widget
 
@@ -127,20 +128,11 @@ elif page == "Simulator":
     render_simulator()
 
 elif page == "War Room":
-    st.markdown("## 🚨 Incident War Room")
-    st.caption("Deep-dive investigation, hypothesis ranking, and human-in-the-loop approval actions *(Owned by P5)*")
-    st.info("🚧 **Coming Soon**: The Incident War Room provides real-time collaborative triage, hypothesis verification, and live runbook execution *(Under development by team member P5)*.")
-
-    active_inc: Optional[Incident] = st.session_state.get("current_incident")
-    if active_inc:
-        with st.container():
-            st.markdown(f"### Target Incident: {active_inc.id} ({active_inc.service})")
-            st.markdown(f"**Symptoms:** {active_inc.symptoms}")
-            if active_inc.root_cause:
-                st.markdown(f"**Identified Root Cause:** `{active_inc.root_cause}`")
-            if active_inc.recommendation:
-                st.markdown(f"**Top Hypothesis:** `{active_inc.recommendation.hypothesis}`")
-                st.markdown(f"**Recommended Runbook:** `{active_inc.recommendation.runbook}`")
+    target_incident = st.session_state.get("war_room_incident_id")
+    if not target_incident:
+        active = st.session_state.get("current_incident")
+        target_incident = getattr(active, "id", None)
+    render_war_room(target_incident)
 
 elif page == "Post-Mortem":
     st.markdown("## 📝 Incident Post-Mortem")

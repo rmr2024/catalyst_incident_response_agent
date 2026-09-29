@@ -1,6 +1,6 @@
 # P6 Demo Guide
 
-This short API-only demo shows the existing alert demo endpoint, incident details, statistics, analytics, and generated post-mortem. It uses the current FastAPI application and does not require seed files or a frontend.
+This API-focused demo shows the existing alert demo endpoint, incident details, statistics, analytics, and generated post-mortem. Current main also includes a Streamlit frontend with Dashboard and Simulator pages and per-incident simulation; this guide demonstrates the P6 APIs directly and does not require using the UI.
 
 ## 1. Start FastAPI
 
@@ -106,7 +106,7 @@ The post-mortem is generated as an API response from the incident's currently re
 
 ## Scope and Limitations
 
-- This branch does not contain the Streamlit frontend.
-- This branch does not contain seed JSON or scenario JSON files.
-- This branch does not contain a working simulator; `/simulate` has no implemented endpoint.
+- Current main includes the Streamlit frontend and per-incident `POST /incidents/{incident_id}/simulate` endpoint; this walkthrough remains API-focused.
+- Current main does not contain P3 seed or scenario JSON files. The frontend has Python mock incident and scenario fixtures.
+- The separate P3 scenario API routes `GET /simulate/scenarios` and `POST /simulate/{scenario_id}` are not present.
 - The demo flow uses only the existing `POST /alerts/demo` endpoint and stored incident data.

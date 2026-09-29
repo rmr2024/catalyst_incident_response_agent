@@ -1,6 +1,6 @@
 # Incident Response Agent
 
-A hackathon-scale FastAPI backend for ingesting incident alerts, recording investigation and remediation activity, and returning incident analytics and post-mortems. The application stores incident data in SQLite and exposes a REST API with server-sent event streams.
+A hackathon-scale incident response application with a FastAPI backend and a Streamlit frontend. It ingests incident alerts, records investigation and remediation activity, and provides incident analytics and post-mortems. The application stores incident data in SQLite and exposes a REST API with server-sent event streams.
 
 ## Current Architecture
 
@@ -9,8 +9,9 @@ A hackathon-scale FastAPI backend for ingesting incident alerts, recording inves
 - `backend/core/` coordinates incident intake, execution, outcomes, and event delivery.
 - `backend/db/` contains SQLModel records, SQLite setup, and CRUD helpers.
 - `backend/schemas.py` contains request/response data contracts.
+- `frontend/` contains the Streamlit console, including Dashboard and Simulator pages, plus Python mock incident and scenario fixtures.
 
-There is no frontend in this branch. The backend can use configured integrations when available and includes fallback behavior for unavailable agent, memory, and action integrations.
+The backend can use configured integrations when available and includes fallback behavior for unavailable agent, memory, and action integrations.
 
 ## Prerequisites
 
@@ -45,7 +46,7 @@ docker compose up --build
 
 Compose builds only the backend, using `backend/` as its build context, and publishes port 8000. The `backend-data` named volume is mounted at `/data`, with SQLite configured at `/data/incidents.db`; incident data persists across container recreation. Stop the service with `docker compose down`. `docker compose down --volumes` also deletes the database volume and its data.
 
-The image build requires Docker Desktop's Linux engine to be running. No frontend container is configured because this branch has no frontend.
+This Compose setup is backend-only: it does not build or launch the Streamlit frontend. The image build requires Docker Desktop's Linux engine to be running.
 
 ## API
 
@@ -62,9 +63,12 @@ All endpoints are served from `http://localhost:8000`.
 | `GET` | `/incidents/{incident_id}` | Incident details |
 | `GET` | `/incidents/{incident_id}/timeline` | Combined event, action, and audit timeline |
 | `GET` | `/incidents/{incident_id}/memory-calls` | Memory-related incident events |
+| `GET` | `/incidents/{incident_id}/similar` | Similar incidents from the recommendation |
 | `GET` | `/incidents/{incident_id}/events` | Per-incident server-sent event stream |
 | `GET` | `/events/stream` | Global server-sent event stream |
 | `POST` | `/incidents/{incident_id}/feedback` | Accept, edit, or reject a recommendation |
+| `POST` | `/incidents/{incident_id}/investigate` | Restart an incident investigation |
+| `POST` | `/incidents/{incident_id}/simulate` | Execute the incident's remediation actions |
 | `POST` | `/incidents/{incident_id}/resolve` | Record incident outcome and resolution |
 | `POST`, `GET` | `/settings/memory` | Read or change the memory-enabled setting |
 | `POST` | `/reset` | Reset incident data and memory setting |
@@ -72,7 +76,7 @@ All endpoints are served from `http://localhost:8000`.
 | `POST` | `/incidents/{incident_id}/postmortem` | Generate a post-mortem response from recorded incident data |
 | `GET` | `/analytics` | Return overall statistics and field distributions |
 
-The `/simulate` and `/assistant` routers currently have no endpoints.
+The per-incident simulation endpoint is `/incidents/{incident_id}/simulate`. The separate P3 scenario API routes `GET /simulate/scenarios` and `POST /simulate/{scenario_id}` are not present. The `/assistant` router currently has no endpoints.
 
 ### P6: Post-mortem and Analytics
 
@@ -126,7 +130,7 @@ There is currently no checked-in automated test suite. Use `/docs` to inspect an
 
 ## Current Limitations
 
-- This branch has no Streamlit frontend.
-- This branch has no seed or scenario JSON files; the only built-in demo content is `POST /alerts/demo`.
-- The `/simulate` and `/assistant` routers are empty.
+- There are no P3 seed or scenario JSON files on current main. The frontend does include mock incident and scenario fixtures, and the backend provides the built-in `POST /alerts/demo` alert.
+- The P3 scenario API routes `GET /simulate/scenarios` and `POST /simulate/{scenario_id}` are not implemented; per-incident simulation is available at `POST /incidents/{incident_id}/simulate`.
+- The `/assistant` router currently has no endpoints.
 - Docker image builds require Docker Desktop's Linux engine to be running.

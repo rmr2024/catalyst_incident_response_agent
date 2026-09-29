@@ -848,6 +848,114 @@ class ApiClient:
 
         return {"incident_id": "INC-NEW-MOCK", "status": "investigating"}
 
+    def get_analytics(self) -> Dict[str, Any]:
+        """Fetch operational analytics (GET /analytics)."""
+        if not self.force_mocks and self.is_backend_live:
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    res = client.get(f"{self.base_url}/analytics")
+                    if res.status_code == 200:
+                        self._is_live = True
+                        data = res.json()
+                        if isinstance(data, dict):
+                            return data
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
+                self._last_error = str(e)
+                self._is_live = False
+
+        # Mock analytics data
+        return {
+            "total": 18,
+            "active": 2,
+            "resolved": 14,
+            "mttr_seconds": 2220,
+            "by_severity": {"P1": 8, "P2": 7, "P3": 3},
+            "by_service": {
+                "checkout-api": 4,
+                "payment-service": 4,
+                "search-service": 3,
+                "inventory-service": 3,
+                "auth-service": 2,
+                "order-service": 1,
+                "notification-service": 1,
+            },
+            "memory_on_mttr_seconds": 1680,
+            "memory_off_mttr_seconds": 3540,
+            "outcomes": {"worked": 14, "partial": 2, "failed": 2},
+        }
+
+    def draft_postmortem(self, incident_id: str) -> Dict[str, Any]:
+        """Draft a post-mortem via LLM (POST /incidents/{id}/postmortem/draft)."""
+        if not self.force_mocks and self.is_backend_live:
+            try:
+                with httpx.Client(timeout=30.0) as client:
+                    res = client.post(f"{self.base_url}/incidents/{incident_id}/postmortem/draft")
+                    if res.status_code == 200:
+                        self._is_live = True
+                        data = res.json()
+                        if isinstance(data, dict):
+                            return data
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
+                self._last_error = str(e)
+                self._is_live = False
+
+        # Mock postmortem draft
+        return {
+            "incident_id": incident_id,
+            "summary": f"[MOCK] {incident_id}: Database connection pool exhausted under elevated checkout load.",
+            "timeline": [
+                f"09:13 — Alert triggered: checkout-api connection pool exhausted",
+                f"09:14 — AI investigation started; similar incidents INC-104 and INC-117 recalled from memory",
+                f"09:22 — Root cause confirmed: pool size of 20 insufficient for peak load",
+                f"09:28 — Action approved: increase pool size to 100 + restart pods",
+                f"09:35 — Simulation executed; pool utilisation dropped to 8%",
+                f"09:42 — Incident resolved",
+            ],
+            "impact": "40% of checkout users received 503 errors for 28 minutes.",
+            "root_cause": "Database connection pool saturation under checkout surge; pool size of 20 was insufficient.",
+            "resolution": "Increased pool size to 100 and restarted pods to clear stale connections.",
+            "lessons": [
+                "Pre-scale connection pools before planned high-traffic events.",
+                "Add pool-utilisation alert at 70% to allow proactive action.",
+                "Separate analytical queries from the transactional pool.",
+            ],
+            "status": "draft",
+        }
+
+    def approve_postmortem(self, incident_id: str) -> Dict[str, Any]:
+        """Approve post-mortem and retain to memory (POST /incidents/{id}/postmortem/approve)."""
+        if not self.force_mocks and self.is_backend_live:
+            try:
+                with httpx.Client(timeout=15.0) as client:
+                    res = client.post(f"{self.base_url}/incidents/{incident_id}/postmortem/approve")
+                    if res.status_code == 200:
+                        self._is_live = True
+                        data = res.json()
+                        if isinstance(data, dict):
+                            return data
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
+                self._last_error = str(e)
+                self._is_live = False
+
+        return {"incident_id": incident_id, "retained": True, "status": "approved"}
+
+    def get_postmortem_status(self, incident_id: str) -> Dict[str, Any]:
+        """Check post-mortem status (GET /incidents/{id}/postmortem/status)."""
+        if not self.force_mocks and self.is_backend_live:
+            try:
+                with httpx.Client(timeout=5.0) as client:
+                    res = client.get(f"{self.base_url}/incidents/{incident_id}/postmortem/status")
+                    if res.status_code == 200:
+                        self._is_live = True
+                        data = res.json()
+                        if isinstance(data, dict):
+                            return data
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
+                self._last_error = str(e)
+                self._is_live = False
+
+        return {"incident_id": incident_id, "status": "none"}
+
 
 # Shared singleton client instance
 api_client = ApiClient()

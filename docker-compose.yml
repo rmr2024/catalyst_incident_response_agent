@@ -6,9 +6,44 @@ services:
       - "8000:8000"
     environment:
       PORT: "8000"
-      DATABASE_URL: sqlite:////data/incidents.db
+      DATABASE_URL: "sqlite:////data/incidents.db"
+      CORS_ORIGINS: "http://localhost:8501"
+      MEMORY_ENABLED: "true"
+      LLM_PROVIDER: "${LLM_PROVIDER:-claude}"
+      LLM_MODEL: "${LLM_MODEL:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      HINDSIGHT_URL: "${HINDSIGHT_URL:-http://localhost:8888}"
+      HINDSIGHT_API_KEY: "${HINDSIGHT_API_KEY:-}"
+      HINDSIGHT_BANK: "${HINDSIGHT_BANK:-incidents}"
+      CRITICAL_SERVICES: "payments,checkout,auth,api-gateway"
     volumes:
       - backend-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      BACKEND_URL: "http://backend:8000"
+      USE_MOCKS: "false"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 volumes:
   backend-data:

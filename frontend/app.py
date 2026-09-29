@@ -5,8 +5,8 @@ Provides seamless navigation between:
 1. Dashboard (Fully functional)
 2. Simulator (Fully functional)
 3. War Room (Fully functional)
-4. Post-Mortem (Coming Soon)
-5. Analytics (Coming Soon)
+4. Post-Mortem
+5. Analytics
 Preserves memory_enabled, selected scenario, current incident, and simulation result in session_state.
 """
 
@@ -30,6 +30,8 @@ from components.badges import render_memory_badge, render_severity_badge, render
 from pages.dashboard import render_dashboard
 from pages.simulator import render_simulator
 from pages.war_room import render_war_room
+from pages.postmortem import render_postmortem
+from pages.analytics import render_analytics
 from models import Incident, SimulationScenario
 from utils.theme import apply_theme, render_theme_toggle_widget
 
@@ -135,11 +137,7 @@ elif page == "War Room":
     render_war_room(target_incident)
 
 elif page == "Post-Mortem":
-    st.markdown("## 📝 Incident Post-Mortem")
-    st.caption("Automated post-incident root cause analysis & Hindsight retention *(Owned by P6)*")
-    st.info("🚧 **Coming Soon**: The Post-Mortem studio automatically generates incident post-mortems, root cause summaries, and Hindsight knowledge retention loops *(Under development by team member P6)*.")
+    render_postmortem()
 
 elif page == "Analytics":
-    st.markdown("## 📈 Incident Analytics")
-    st.caption("MTTR benchmarks, memory-enabled vs disabled impact, and recurring service trends *(Owned by P6)*")
-    st.info("🚧 **Coming Soon**: Advanced operational KPIs, MTTR benchmarks (Memory ON vs Memory OFF), and cross-service reliability analytics are under development by team member P6.")
+    render_analytics()

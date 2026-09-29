@@ -54,8 +54,8 @@ def render_dashboard():
     # ---------------------------------------------------------
     # Header & System / Memory Status Bar
     # ---------------------------------------------------------
-    st.markdown("## 🛡️ Incident Response Agent — Live Operations Dashboard")
-    st.caption("Autonomous triage, root-cause investigation, and memory-backed remediation for production incidents.")
+    st.markdown("## 🛡️ Incident Operations Center")
+    st.caption("Autonomous incident triage, root-cause investigation, and memory-backed remediation for production services.")
 
     # 5. Memory Status & System Telemetry Display
     memory_enabled: bool = st.session_state.get("memory_enabled", True)
@@ -190,15 +190,22 @@ def render_dashboard():
                         <strong>Target Service:</strong> <code>{newly_triggered.service}</code> &nbsp;|&nbsp;
                         <strong>Impact:</strong> {newly_triggered.impact or 'Critical checkout degradation'}
                     </div>
-                    <div style="font-size: 12px; color: #cbd5e1;">
+                    <div style="font-size: 12px; color: #cbd5e1; margin-bottom: 8px;">
                         <strong>Message:</strong> {newly_triggered.message or 'Connection pool exhausted, requests timing out'} &nbsp;|&nbsp;
-                        <strong>Affected Users:</strong> {newly_triggered.affected_users or 4800:,} &nbsp;|&nbsp;
+                        <strong>Affected Users:</strong> {f"{newly_triggered.affected_users:,}" if newly_triggered.affected_users else "4,800"} &nbsp;|&nbsp;
                         <strong>Timestamp:</strong> {format_timestamp(newly_triggered.timestamp)}
                     </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
+            c_btn1, c_btn2, _ = st.columns([1.5, 1.5, 3])
+            with c_btn1:
+                if st.button("🧪 Open in Simulator →", key="callout_sim_btn", type="primary"):
+                    navigate_to("Simulator")
+            with c_btn2:
+                if st.button("🚨 Enter War Room →", key="callout_war_btn"):
+                    navigate_to("War Room")
 
     st.markdown("---")
 
@@ -288,7 +295,7 @@ def render_dashboard():
         )
 
     if not active_incidents:
-        st.info("🟢 **No active incidents matching current filters.** All monitored services are healthy.")
+        st.success("🟢 **All Monitored Services Healthy**: Zero active production incidents currently detected.")
     else:
         if view_style == "Table View":
             # Tabular view of active incidents
@@ -390,7 +397,7 @@ def render_dashboard():
     st.caption("Historical incident archive with root cause findings, runbook resolutions, MTTR durations, and outcomes")
 
     if not resolved_incidents:
-        st.info("No resolved incidents recorded yet.")
+        st.info("ℹ️ **Historical Archive Empty**: Resolved incident post-mortems and remediation histories will appear here.")
     else:
         recent_data = []
         for inc in resolved_incidents:

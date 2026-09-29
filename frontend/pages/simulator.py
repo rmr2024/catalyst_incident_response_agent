@@ -83,7 +83,11 @@ def render_simulator():
     if "sim_feedback" not in st.session_state:
         st.session_state["sim_feedback"] = None
 
-    st.write("")
+    if st.session_state.pop("_reset_sim_scenario", False):
+        st.session_state["selected_scenario_index"] = 0
+        st.session_state["selected_scenario"] = scenarios[0]
+        if "sim_scenario_dropdown" in st.session_state:
+            st.session_state["sim_scenario_dropdown"] = scenario_names[0]
 
     # ---------------------------------------------------------
     # 1. Scenario Selector & 2. Memory Toggle Row
@@ -111,12 +115,6 @@ def render_simulator():
         st.markdown("### 2. Memory State")
         current_mem = st.session_state.get("memory_enabled", True)
 
-        if (
-            "sim_memory_toggle" in st.session_state
-            and st.session_state["sim_memory_toggle"] != current_mem
-        ):
-            st.session_state["sim_memory_toggle"] = current_mem
-
         new_mem = st.toggle(
             "🧠 Memory ON / Memory OFF",
             value=current_mem,
@@ -126,8 +124,6 @@ def render_simulator():
 
         if new_mem != current_mem:
             st.session_state["memory_enabled"] = new_mem
-            if "sidebar_memory_toggle" in st.session_state:
-                st.session_state["sidebar_memory_toggle"] = new_mem
             api_client.set_memory_status(new_mem)
             st.toast(f"Hindsight memory {'enabled' if new_mem else 'disabled'}")
             st.rerun()
@@ -216,8 +212,7 @@ def render_simulator():
             st.session_state["sim_feedback"] = None
             st.session_state["selected_scenario_index"] = 0
             st.session_state["selected_scenario"] = scenarios[0]
-            if "sim_scenario_dropdown" in st.session_state:
-                st.session_state["sim_scenario_dropdown"] = scenario_names[0]
+            st.session_state["_reset_sim_scenario"] = True
             st.toast("Simulation sandbox reset successfully.", icon="🔄")
             st.rerun()
 
@@ -264,7 +259,18 @@ def render_simulator():
     sim_res: Optional[SimulationResponse] = st.session_state.get("simulation_result")
 
     if not sim_res:
-        st.info("💡 **Ready to simulate**: Select a failure scenario above and click **'🚀 Run Simulation'** to inspect autonomous agent diagnosis.")
+        st.markdown(
+            """
+            <div style="border: 1px dashed #475569; background: rgba(30, 41, 59, 0.35); border-radius: 8px; padding: 24px; text-align: center; margin: 16px 0;">
+                <div style="font-size: 26px; margin-bottom: 8px;">🧪</div>
+                <div style="font-weight: 700; font-size: 15px; color: #f1f5f9; margin-bottom: 6px;">Simulation Harness Ready</div>
+                <div style="color: #94a3b8; font-size: 13px; max-width: 580px; margin: 0 auto; line-height: 1.5;">
+                    Select an outage scenario above, toggle <strong>Hindsight Memory</strong> ON or OFF, and click <strong>🚀 Run Simulation</strong> to evaluate autonomous root cause diagnosis and remediation runbooks.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     else:
         inc: Optional[Incident] = sim_res.incident
         if not inc and sim_res.incident_id:

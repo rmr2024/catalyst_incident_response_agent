@@ -91,30 +91,9 @@ with st.sidebar:
     st.markdown(render_system_status_pill(is_live), unsafe_allow_html=True)
     st.write("")
 
-    # Memory ON/OFF Toggle
+    # Memory Status Indicator
     mem_enabled = st.session_state.get("memory_enabled", True)
-    if (
-        "sidebar_memory_toggle" in st.session_state
-        and st.session_state["sidebar_memory_toggle"] != mem_enabled
-    ):
-        st.session_state["sidebar_memory_toggle"] = mem_enabled
-
-    new_mem = st.toggle(
-        "🧠 Hindsight Memory",
-        value=mem_enabled,
-        help="Enable/disable retrieval of historical incident knowledge from Hindsight",
-        key="sidebar_memory_toggle",
-    )
-
-    if new_mem != mem_enabled:
-        st.session_state["memory_enabled"] = new_mem
-        if "sim_memory_toggle" in st.session_state:
-            st.session_state["sim_memory_toggle"] = new_mem
-        api_client.set_memory_status(new_mem)
-        st.toast(f"Hindsight memory {'enabled' if new_mem else 'disabled'}")
-        st.rerun()
-
-    st.markdown(render_memory_badge(new_mem), unsafe_allow_html=True)
+    st.markdown(render_memory_badge(mem_enabled), unsafe_allow_html=True)
 
     # Active Incident Quick Badge in Sidebar
     active_inc: Optional[Incident] = st.session_state.get("current_incident")

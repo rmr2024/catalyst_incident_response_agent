@@ -53,13 +53,13 @@ def render_system_status_pill(is_live: bool) -> str:
     """Return HTML string for backend connection status."""
     if is_live:
         return (
-            '<div style="background-color: rgba(34, 197, 94, 0.12); border: 1px solid #22c55e; '
-            'border-radius: 6px; padding: 4px 10px; text-align: center; color: #4ade80; '
+            '<div style="background-color: var(--fix-bg, rgba(34, 197, 94, 0.12)); border: 1px solid #22c55e; '
+            'border-radius: 6px; padding: 4px 10px; text-align: center; color: var(--fix-text, #4ade80); '
             'font-size: 12px; font-weight: 600;">● Live Backend</div>'
         )
     return (
-        '<div style="background-color: rgba(234, 179, 8, 0.12); border: 1px solid #eab308; '
-        'border-radius: 6px; padding: 4px 10px; text-align: center; color: #facc15; '
+        '<div style="background-color: rgba(234, 179, 8, 0.15); border: 1px solid #eab308; '
+        'border-radius: 6px; padding: 4px 10px; text-align: center; color: var(--warn-text, #facc15); '
         'font-size: 12px; font-weight: 600;">▲ Mock Mode</div>'
     )
 
@@ -68,12 +68,12 @@ def render_memory_badge(memory_enabled: bool) -> str:
     """Return HTML string for Hindsight memory state badge."""
     if memory_enabled:
         return (
-            '<span style="background-color: rgba(59, 130, 246, 0.15); color: #60a5fa; '
+            '<span style="background-color: var(--callout-bg, rgba(59, 130, 246, 0.15)); color: var(--badge-blue, #60a5fa); '
             'border: 1px solid #3b82f6; padding: 3px 8px; border-radius: 6px; '
             'font-size: 11px; font-weight: 600;">🧠 Memory ON</span>'
         )
     return (
-        '<span style="background-color: rgba(148, 163, 184, 0.15); color: #94a3b8; '
-        'border: 1px solid #64748b; padding: 3px 8px; border-radius: 6px; '
+        '<span style="background-color: var(--generic-bg, rgba(148, 163, 184, 0.15)); color: var(--text-muted, #94a3b8); '
+        'border: 1px solid var(--border-color, #64748b); padding: 3px 8px; border-radius: 6px; '
         'font-size: 11px; font-weight: 600;">⚪ Memory OFF</span>'
     )

@@ -30,6 +30,7 @@ from components.badges import render_memory_badge, render_severity_badge, render
 from pages.dashboard import render_dashboard
 from pages.simulator import render_simulator
 from models import Incident, SimulationScenario
+from utils.theme import apply_theme, render_theme_toggle_widget
 
 # 1. Page Configuration
 st.set_page_config(
@@ -39,19 +40,12 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Hide Streamlit's default multi-page auto-navigation to prevent duplicate sidebar entries
-st.markdown(
-    """
-    <style>
-        [data-testid="stSidebarNav"],
-        section[data-testid="stSidebarNav"],
-        div[data-testid="stSidebarNav"] {
-            display: none !important;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# Initialize Theme Mode (defaults to dark for DevOps console)
+if "theme_mode" not in st.session_state:
+    st.session_state["theme_mode"] = "dark"
+
+# Apply active theme CSS & component styling overrides
+apply_theme()
 
 # Handle pending programmatic navigation before widget creation
 if "_nav_destination" in st.session_state and st.session_state["_nav_destination"]:
@@ -82,6 +76,9 @@ if "loading_state" not in st.session_state:
 with st.sidebar:
     st.markdown("## 🛡️ Incident Response Agent")
     st.caption("AI-Powered SRE Console with Long-Term Memory")
+
+    # Dark / Light Theme Toggle
+    render_theme_toggle_widget()
     st.markdown("---")
 
     # Navigation Menu

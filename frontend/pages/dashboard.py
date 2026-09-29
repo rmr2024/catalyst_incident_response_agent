@@ -179,18 +179,18 @@ def render_dashboard():
                 f"""
                 <div style="border: 2px solid #ef4444; background: rgba(239, 68, 68, 0.08); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <span style="font-size: 15px; font-weight: 700; color: #f87171;">
+                        <span style="font-size: 15px; font-weight: 700; color: #ef4444;">
                             🚨 Newly Created Incident: {newly_triggered.id}
                         </span>
                         <span style="background-color: #ef444422; color: #ef4444; border: 1px solid #ef4444; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">
                             {newly_triggered.severity or 'P1'}
                         </span>
                     </div>
-                    <div style="font-size: 13px; color: #f1f5f9; margin-bottom: 6px;">
+                    <div style="font-size: 13px; color: var(--text-primary, #f1f5f9); margin-bottom: 6px;">
                         <strong>Target Service:</strong> <code>{newly_triggered.service}</code> &nbsp;|&nbsp;
                         <strong>Impact:</strong> {newly_triggered.impact or 'Critical checkout degradation'}
                     </div>
-                    <div style="font-size: 12px; color: #cbd5e1; margin-bottom: 8px;">
+                    <div style="font-size: 12px; color: var(--text-secondary, #cbd5e1); margin-bottom: 8px;">
                         <strong>Message:</strong> {newly_triggered.message or 'Connection pool exhausted, requests timing out'} &nbsp;|&nbsp;
                         <strong>Affected Users:</strong> {f"{newly_triggered.affected_users:,}" if newly_triggered.affected_users else "4,800"} &nbsp;|&nbsp;
                         <strong>Timestamp:</strong> {format_timestamp(newly_triggered.timestamp)}

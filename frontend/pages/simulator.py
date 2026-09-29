@@ -261,10 +261,10 @@ def render_simulator():
     if not sim_res:
         st.markdown(
             """
-            <div style="border: 1px dashed #475569; background: rgba(30, 41, 59, 0.35); border-radius: 8px; padding: 24px; text-align: center; margin: 16px 0;">
+            <div style="border: 1px dashed var(--harness-border, #475569); background: var(--harness-bg, rgba(30, 41, 59, 0.35)); border-radius: 8px; padding: 24px; text-align: center; margin: 16px 0;">
                 <div style="font-size: 26px; margin-bottom: 8px;">🧪</div>
-                <div style="font-weight: 700; font-size: 15px; color: #f1f5f9; margin-bottom: 6px;">Simulation Harness Ready</div>
-                <div style="color: #94a3b8; font-size: 13px; max-width: 580px; margin: 0 auto; line-height: 1.5;">
+                <div style="font-weight: 700; font-size: 15px; color: var(--text-primary, #f1f5f9); margin-bottom: 6px;">Simulation Harness Ready</div>
+                <div style="color: var(--text-muted, #94a3b8); font-size: 13px; max-width: 580px; margin: 0 auto; line-height: 1.5;">
                     Select an outage scenario above, toggle <strong>Hindsight Memory</strong> ON or OFF, and click <strong>🚀 Run Simulation</strong> to evaluate autonomous root cause diagnosis and remediation runbooks.
                 </div>
             </div>
@@ -289,10 +289,10 @@ def render_simulator():
         # 12. Display Memory Status Banner
         if mem_is_active:
             st.markdown(
-                '<div style="background-color: rgba(59, 130, 246, 0.12); border-left: 4px solid #3b82f6; '
+                '<div style="background-color: var(--callout-bg, rgba(59, 130, 246, 0.12)); border-left: 4px solid #3b82f6; '
                 'border-radius: 6px; padding: 12px; margin-bottom: 16px;">'
-                '<strong style="color: #60a5fa;">🧠 Hindsight Long-Term Memory Active (Memory ON)</strong><br>'
-                '<span style="color: #cbd5e1; font-size: 13px;">'
+                '<strong style="color: var(--badge-blue, #60a5fa);">🧠 Hindsight Long-Term Memory Active (Memory ON)</strong><br>'
+                '<span style="color: var(--text-secondary, #cbd5e1); font-size: 13px;">'
                 'Agent queried Hindsight incident knowledge graph. Historical failure patterns, previous successful fixes, '
                 'and proven runbooks were retrieved and used to diagnose this incident.'
                 '</span>'
@@ -303,8 +303,8 @@ def render_simulator():
             st.markdown(
                 '<div style="background-color: rgba(234, 179, 8, 0.12); border-left: 4px solid #eab308; '
                 'border-radius: 6px; padding: 12px; margin-bottom: 16px;">'
-                '<strong style="color: #facc15;">⚪ Hindsight Memory Disabled (Memory OFF)</strong><br>'
-                '<span style="color: #cbd5e1; font-size: 13px;">'
+                '<strong style="color: var(--warn-text, #facc15);">⚪ Hindsight Memory Disabled (Memory OFF)</strong><br>'
+                '<span style="color: var(--text-secondary, #cbd5e1); font-size: 13px;">'
                 'Agent executed triage <strong>WITHOUT</strong> historical incident context. Diagnosis is limited to raw telemetry heuristics, '
                 'resulting in lower confidence and generic manual triage runbooks.'
                 '</span>'
@@ -358,9 +358,9 @@ def render_simulator():
                 if mem_is_active and rec.previous_successful_fix:
                     st.markdown(
                         f"""
-                        <div style="border: 1px solid #22c55e66; background: rgba(34, 197, 94, 0.08); border-radius: 6px; padding: 10px; margin-top: 10px; margin-bottom: 10px;">
-                            <span style="color: #4ade80; font-weight: 700; font-size: 13px;">✓ Previous Successful Fix (from Hindsight Memory):</span><br>
-                            <span style="color: #f1f5f9; font-size: 12px;">{rec.previous_successful_fix}</span>
+                        <div style="border: 1px solid var(--fix-border, #22c55e66); background: var(--fix-bg, rgba(34, 197, 94, 0.08)); border-radius: 6px; padding: 10px; margin-top: 10px; margin-bottom: 10px;">
+                            <span style="color: var(--fix-text, #4ade80); font-weight: 700; font-size: 13px;">✓ Previous Successful Fix (from Hindsight Memory):</span><br>
+                            <span style="color: var(--text-primary, #f1f5f9); font-size: 12px;">{rec.previous_successful_fix}</span>
                         </div>
                         """,
                         unsafe_allow_html=True,
@@ -371,8 +371,8 @@ def render_simulator():
                     st.markdown(
                         f"""
                         <div style="border: 1px solid #ef444466; background: rgba(239, 68, 68, 0.08); border-radius: 6px; padding: 10px; margin-top: 6px;">
-                            <span style="color: #f87171; font-weight: 700; font-size: 13px;">⚠️ Past Failed Attempts to AVOID:</span><br>
-                            <span style="color: #f1f5f9; font-size: 12px;">{rec.failed_before[0]}</span>
+                            <span style="color: #ef4444; font-weight: 700; font-size: 13px;">⚠️ Past Failed Attempts to AVOID:</span><br>
+                            <span style="color: var(--text-primary, #f1f5f9); font-size: 12px;">{rec.failed_before[0]}</span>
                         </div>
                         """,
                         unsafe_allow_html=True,

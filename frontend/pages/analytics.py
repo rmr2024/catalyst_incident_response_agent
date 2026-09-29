@@ -310,7 +310,7 @@ def render_analytics():
         def _color_mem(val):
             return "color: #60a5fa" if val == "ON" else "color: #64748b"
 
-        styled = df.style.applymap(_color_sev, subset=["Severity"]).applymap(_color_mem, subset=["Memory"])
+        styled = df.style.map(_color_sev, subset=["Severity"]).map(_color_mem, subset=["Memory"])
         st.dataframe(styled, use_container_width=True, hide_index=True)
     else:
         st.info("No incidents to display. Trigger a simulation to get started.")

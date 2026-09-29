@@ -1,12 +1,22 @@
 """
-Incident Response Agent - Frontend Entry Point.
-Streamlit multipage application root.
+Incident Response Agent - Main Console Shell.
+Streamlit application root coordinating sidebar navigation, session state, and page dispatching.
 """
 
+import sys
+from pathlib import Path
 import streamlit as st
-from api_client import api_client
-from components.header import render_header
 
+# Ensure frontend root is on sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from api_client import api_client
+from components.badges import render_memory_badge, render_severity_badge, render_status_badge, render_system_status_pill
+from pages.dashboard import render_dashboard
+from pages.simulator import render_simulator
+from types import Incident
+
+# 1. Page Configuration
 st.set_page_config(
     page_title="Incident Response Agent",
     page_icon="🛡️",
@@ -14,58 +24,117 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-render_header(
-    title="Incident Response Agent",
-    subtitle="AI-Powered Operational Incident Response with Long-Term Memory",
-)
+# 2. Initialize Session State
+if "selected_page" not in st.session_state:
+    st.session_state["selected_page"] = "Dashboard"
 
-# Landing overview
-st.markdown("""
-### Welcome to the Incident Response Console
+if "memory_enabled" not in st.session_state:
+    st.session_state["memory_enabled"] = api_client.get_memory_status()
 
-An AI-powered incident response system that leverages **Hindsight long-term operational memory**
-to investigate production outages, retrieve relevant historical incidents, recommend proven runbooks,
-and learn from resolved incidents.
+if "selected_scenario" not in st.session_state:
+    scenarios = api_client.get_simulation_scenarios()
+    st.session_state["selected_scenario"] = scenarios[0] if scenarios else None
 
-> **Central Principle:** An incident response agent should never investigate every outage from scratch.
-> It remembers what happened before, what worked, what failed, and what engineers learned.
-""")
+if "current_incident" not in st.session_state:
+    incidents = api_client.get_incidents(active=True)
+    st.session_state["current_incident"] = incidents[0] if incidents else None
 
-col1, col2, col3 = st.columns(3)
+if "simulation_result" not in st.session_state:
+    st.session_state["simulation_result"] = None
 
-stats = api_client.get_stats()
-with col1:
-    st.metric(label="Active Incidents", value=stats.get("active", 0))
-with col2:
-    st.metric(label="Total Recorded", value=stats.get("total", 0))
-with col3:
-    st.metric(label="Avg MTTR", value=f"{stats.get('avg_ttr_minutes', 0.0):.1f} min")
+if "loading_state" not in st.session_state:
+    st.session_state["loading_state"] = False
 
-st.markdown("---")
-st.subheader("Console Navigation")
+# 3. Sidebar Navigation & Status
+with st.sidebar:
+    st.markdown("## 🛡️ Incident Response Agent")
+    st.caption("AI-Powered SRE Console with Long-Term Memory")
+    st.markdown("---")
 
-nav_col1, nav_col2, nav_col3 = st.columns(3)
+    # Navigation Menu
+    nav_options = ["Dashboard", "Simulator", "War Room", "Post-Mortem", "Analytics"]
+    current_page = st.session_state.get("selected_page", "Dashboard")
+    current_index = nav_options.index(current_page) if current_page in nav_options else 0
 
-with nav_col1:
-    st.markdown("""
-    #### 📊 Dashboard
-    Real-time incident feed, severity classification badges, active outage telemetry, and alert triggers.
-    """)
-    if st.button("Open Dashboard →", use_container_width=True, key="btn_nav_dashboard"):
-        st.switch_page("pages/1_Dashboard.py")
+    selected = st.radio(
+        "Navigation",
+        options=nav_options,
+        index=current_index,
+        key="sidebar_navigation_radio",
+    )
 
-with nav_col2:
-    st.markdown("""
-    #### 🧪 Simulator
-    Inject pre-configured production failure scenarios and compare AI diagnosis with **Memory ON vs OFF**.
-    """)
-    if st.button("Open Simulator →", use_container_width=True, key="btn_nav_simulator"):
-        st.switch_page("pages/2_Simulator.py")
+    if selected != st.session_state["selected_page"]:
+        st.session_state["selected_page"] = selected
+        st.rerun()
 
-with nav_col3:
-    st.markdown("""
-    #### 🚨 War Room
-    Deep-dive investigation view with root-cause prediction, evidence ranking, and human-in-the-loop approval.
-    *(Owned by P5)*
-    """)
-    st.info("Select an active incident from the Dashboard to enter its War Room.")
+    st.markdown("---")
+
+    # Sidebar Status Indicators
+    st.markdown("#### System Telemetry")
+
+    # System Status Indicator
+    is_live = api_client.is_backend_live
+    st.markdown(render_system_status_pill(is_live), unsafe_allow_html=True)
+    st.write("")
+
+    # Memory ON/OFF Toggle
+    mem_enabled = st.session_state["memory_enabled"]
+    new_mem = st.toggle(
+        "🧠 Hindsight Memory",
+        value=mem_enabled,
+        help="Enable/disable retrieval of historical incident knowledge from Hindsight",
+        key="sidebar_memory_toggle",
+    )
+
+    if new_mem != mem_enabled:
+        st.session_state["memory_enabled"] = new_mem
+        api_client.toggle_memory(new_mem)
+        st.toast(f"Hindsight memory {'enabled' if new_mem else 'disabled'}")
+        st.rerun()
+
+    st.markdown(render_memory_badge(new_mem), unsafe_allow_html=True)
+
+    # Active Incident Quick Badge in Sidebar
+    active_inc: Incident = st.session_state.get("current_incident")
+    if active_inc:
+        st.markdown("---")
+        st.markdown("#### Active Target")
+        st.caption(f"**{active_inc.id}** — `{active_inc.service}`")
+        st.markdown(
+            f"{render_severity_badge(active_inc.severity)} &nbsp; {render_status_badge(active_inc.status)}",
+            unsafe_allow_html=True,
+        )
+
+# 4. Page Dispatcher
+page = st.session_state["selected_page"]
+
+if page == "Dashboard":
+    render_dashboard()
+
+elif page == "Simulator":
+    render_simulator()
+
+elif page == "War Room":
+    st.markdown("## 🚨 Incident War Room")
+    st.caption("Deep-dive investigation, hypothesis ranking, and human approval *(Owned by P5)*")
+    st.info("🚧 **War Room Domain (P5 Ownership)**: Investigation telemetry, live action runner, and approval controls are managed by P5.")
+
+    active_inc: Incident = st.session_state.get("current_incident")
+    if active_inc:
+        st.markdown(f"### Investigating: {active_inc.id} ({active_inc.service})")
+        st.markdown(f"**Symptoms:** {active_inc.symptoms}")
+        if active_inc.recommendation:
+            st.markdown(f"**Top Hypothesis:** `{active_inc.recommendation.hypothesis}`")
+            st.markdown(f"**Recommended Runbook:** `{active_inc.recommendation.runbook}`")
+    else:
+        st.write("No incident currently selected. Select an incident from the [Dashboard](#) to inspect.")
+
+elif page == "Post-Mortem":
+    st.markdown("## 📝 Incident Post-Mortem")
+    st.caption("Automated post-incident root cause analysis & Hindsight retention *(Owned by P6)*")
+    st.info("🚧 **Post-Mortem Domain (P6 Ownership)**: Post-mortem drafting, incident timeline synthesis, and Hindsight knowledge retention loop are managed by P6.")
+
+elif page == "Analytics":
+    st.markdown("## 📈 Incident Analytics")
+    st.caption("MTTR benchmarks, memory-enabled vs disabled impact, and recurring service trends *(Owned by P6)*")
+    st.info("🚧 **Analytics Domain (P6 Ownership)**: Long-term operational KPIs, MTTR trends, and memory efficacy metrics are managed by P6.")

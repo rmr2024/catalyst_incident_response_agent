@@ -229,23 +229,29 @@ class ApiClient:
                     if res.status_code == 200:
                         self._is_live = True
                         raw_items = res.json()
+                        if isinstance(raw_items, dict) and "items" in raw_items:
+                            raw_items = raw_items["items"]
+                        elif not isinstance(raw_items, list):
+                            raw_items = []
                         incidents: List[Incident] = []
                         for raw in raw_items:
+                            if not isinstance(raw, dict):
+                                continue
                             incidents.append(
                                 Incident(
-                                    id=raw["id"],
-                                    title=raw.get("headline") or raw.get("message") or f"Incident {raw['id']}",
-                                    service=raw["service"],
-                                    severity=raw["severity"],
-                                    status=raw["status"],
-                                    symptoms=raw.get("message", ""),
-                                    root_cause=raw.get("top_hypothesis"),
+                                    id=raw.get("id") or raw.get("incident_id") or "INC-UNKNOWN",
+                                    title=raw.get("headline") or raw.get("title") or raw.get("message") or f"Incident {raw.get('id', '')}",
+                                    service=raw.get("service") or "unknown-service",
+                                    severity=raw.get("severity") or "P3",
+                                    status=raw.get("status") or "investigating",
+                                    symptoms=raw.get("message") or raw.get("symptoms") or "",
+                                    root_cause=raw.get("top_hypothesis") or raw.get("root_cause") or raw.get("rootCause"),
                                     resolution=raw.get("resolution"),
-                                    started_at=raw.get("created_at", "2026-09-29T11:30:00Z"),
-                                    resolved_at=raw.get("resolved_at"),
-                                    affected_users=raw.get("affected_users"),
-                                    is_novel=raw.get("is_novel", False),
-                                    memory_used=raw.get("memory_used", True),
+                                    started_at=raw.get("created_at") or raw.get("started_at") or raw.get("startedAt") or "2026-09-29T11:30:00Z",
+                                    resolved_at=raw.get("resolved_at") or raw.get("resolvedAt"),
+                                    affected_users=raw.get("affected_users") or raw.get("affectedUsers"),
+                                    is_novel=raw.get("is_novel") or raw.get("isNovel") or False,
+                                    memory_used=raw.get("memory_used") if raw.get("memory_used") is not None else raw.get("memoryUsed", True),
                                 )
                             )
                         return incidents
@@ -281,20 +287,22 @@ class ApiClient:
                     if res.status_code == 200:
                         self._is_live = True
                         raw = res.json()
+                        if not isinstance(raw, dict):
+                            raw = {}
                         return Incident(
-                            id=raw["id"],
-                            title=raw.get("headline") or raw.get("message") or f"Incident {raw['id']}",
-                            service=raw["service"],
-                            severity=raw["severity"],
-                            status=raw["status"],
-                            symptoms=raw.get("message", ""),
-                            root_cause=raw.get("top_hypothesis"),
+                            id=raw.get("id") or raw.get("incident_id") or incident_id,
+                            title=raw.get("headline") or raw.get("title") or raw.get("message") or f"Incident {incident_id}",
+                            service=raw.get("service") or "unknown-service",
+                            severity=raw.get("severity") or "P3",
+                            status=raw.get("status") or "investigating",
+                            symptoms=raw.get("message") or raw.get("symptoms") or "",
+                            root_cause=raw.get("top_hypothesis") or raw.get("root_cause") or raw.get("rootCause"),
                             resolution=raw.get("resolution"),
-                            started_at=raw.get("created_at", "2026-09-29T11:30:00Z"),
-                            resolved_at=raw.get("resolved_at"),
-                            affected_users=raw.get("affected_users"),
-                            is_novel=raw.get("is_novel", False),
-                            memory_used=raw.get("memory_used", True),
+                            started_at=raw.get("created_at") or raw.get("started_at") or raw.get("startedAt") or "2026-09-29T11:30:00Z",
+                            resolved_at=raw.get("resolved_at") or raw.get("resolvedAt"),
+                            affected_users=raw.get("affected_users") or raw.get("affectedUsers"),
+                            is_novel=raw.get("is_novel") or raw.get("isNovel") or False,
+                            memory_used=raw.get("memory_used") if raw.get("memory_used") is not None else raw.get("memoryUsed", True),
                         )
             except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
                 self._last_error = str(e)
@@ -446,17 +454,19 @@ class ApiClient:
                     if res.status_code == 200:
                         self._is_live = True
                         data = res.json()
+                        if not isinstance(data, dict):
+                            data = {}
                         by_sev = data.get("by_severity") or {}
                         mttr_s = data.get("mttr_seconds")
                         avg_ttr = round(mttr_s / 60.0, 1) if mttr_s else 0.0
                         return IncidentStats(
                             total=data.get("total", 0),
                             active=data.get("active", 0),
-                            resolved_today=data.get("resolved", 0),
+                            resolved_today=data.get("resolved") or data.get("resolved_today", 0),
                             p1=by_sev.get("P1", 0),
                             p2=by_sev.get("P2", 0),
                             p3=by_sev.get("P3", 0),
-                            avg_ttr_minutes=avg_ttr,
+                            avg_ttr_minutes=avg_ttr or data.get("avg_ttr_minutes", 0.0),
                         )
             except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
                 self._last_error = str(e)
@@ -477,16 +487,19 @@ class ApiClient:
                     if res.status_code == 200:
                         self._is_live = True
                         items = res.json()
+                        if not isinstance(items, list):
+                            items = []
                         return [
                             TimelineEvent(
                                 id=f"EVT-{idx+1}",
-                                timestamp=ev.get("ts", "2026-09-29T11:30:00Z"),
-                                type=ev.get("kind", "agent"),
-                                message=ev.get("title") or ev.get("step") or "Timeline step",
+                                timestamp=ev.get("ts") or ev.get("timestamp") or "2026-09-29T11:30:00Z",
+                                type=ev.get("kind") or ev.get("type") or "agent",
+                                message=ev.get("title") or ev.get("step") or ev.get("message") or "Timeline step",
                                 status=ev.get("status"),
                                 detail=ev.get("detail"),
                             )
                             for idx, ev in enumerate(items)
+                            if isinstance(ev, dict)
                         ]
             except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
                 self._last_error = str(e)

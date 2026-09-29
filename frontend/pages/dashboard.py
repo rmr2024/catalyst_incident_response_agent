@@ -102,6 +102,7 @@ def render_dashboard():
             type="primary",
             use_container_width=True,
             help="Simulate an urgent production alert and ingest it into the agent pipeline",
+            key="dash_trigger_demo_alert_btn",
         )
 
     with btn_col2:
@@ -110,11 +111,12 @@ def render_dashboard():
             "🔄 Refresh",
             use_container_width=True,
             help="Re-fetch latest telemetry, incidents, and KPI metrics",
+            key="dash_refresh_btn",
         )
 
     with btn_col3:
         # Navigation to Simulator
-        if st.button("🧪 Simulator →", use_container_width=True, help="Switch to Safe Outage Simulation Sandbox"):
+        if st.button("🧪 Simulator →", use_container_width=True, help="Switch to Safe Outage Simulation Sandbox", key="dash_goto_simulator_btn"):
             navigate_to("Simulator")
 
     with filter_col1:
@@ -204,13 +206,15 @@ def render_dashboard():
     # 7. Error Handling & Data Fetching
     # ---------------------------------------------------------
     try:
-        stats: IncidentStats = api_client.get_stats()
+        stats = api_client.get_stats()
+        if not stats:
+            stats = IncidentStats(total=0, active=0, resolved_today=0, p1=0, p2=0, p3=0, avg_ttr_minutes=0.0)
     except Exception as ex:
         st.warning(f"Could not load incident statistics: {ex}")
         stats = IncidentStats(total=0, active=0, resolved_today=0, p1=0, p2=0, p3=0, avg_ttr_minutes=0.0)
 
     try:
-        all_incidents: List[Incident] = api_client.get_incidents()
+        all_incidents = api_client.get_incidents() or []
     except Exception as ex:
         st.error(f"Error fetching incidents: {ex}")
         all_incidents = []
@@ -315,7 +319,7 @@ def render_dashboard():
             )
         else:
             # Card View with detailed SRE layout
-            for inc in active_incidents:
+            for inc_idx, inc in enumerate(active_incidents):
                 sev_color = get_severity_color(inc.severity)
                 status_color = get_status_color(inc.status)
                 sev_pill = _get_severity_indicator(inc.severity)
@@ -357,9 +361,10 @@ def render_dashboard():
                         if inc.root_cause:
                             st.markdown(f"**Identified Root Cause:** `{inc.root_cause}`")
                         if inc.recommendation:
+                            conf_val = f"{inc.recommendation.confidence * 100:.0f}%" if inc.recommendation.confidence is not None else "N/A"
                             st.markdown("---")
-                            st.markdown(f"**Top Hypothesis:** `{inc.recommendation.hypothesis}` (Confidence: **{inc.recommendation.confidence * 100:.0f}%**)")
-                            st.markdown(f"**Recommended Runbook:** `{inc.recommendation.runbook}`")
+                            st.markdown(f"**Top Hypothesis:** `{inc.recommendation.hypothesis or 'Under Investigation'}` (Confidence: **{conf_val}**)")
+                            st.markdown(f"**Recommended Runbook:** `{inc.recommendation.runbook or 'Standard Runbook'}`")
                             if inc.recommendation.recommended_steps:
                                 st.markdown("**Recommended Steps:**")
                                 for s_idx, step in enumerate(inc.recommendation.recommended_steps, 1):
@@ -367,12 +372,12 @@ def render_dashboard():
 
                         btn_inspect_col1, btn_inspect_col2 = st.columns([1, 1])
                         with btn_inspect_col1:
-                            if st.button(f"Set Active Target ({inc.id})", key=f"target_{inc.id}"):
+                            if st.button(f"Set Active Target ({inc.id})", key=f"target_{inc.id}_{inc_idx}"):
                                 st.session_state["current_incident"] = inc
                                 st.toast(f"Set current target to {inc.id}")
                                 st.rerun()
                         with btn_inspect_col2:
-                            if st.button(f"Enter War Room 🚨", key=f"war_{inc.id}"):
+                            if st.button(f"Enter War Room 🚨", key=f"war_{inc.id}_{inc_idx}"):
                                 st.session_state["current_incident"] = inc
                                 navigate_to("War Room")
 

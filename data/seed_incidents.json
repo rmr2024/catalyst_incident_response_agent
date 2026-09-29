@@ -1,0 +1,612 @@
+[
+  {
+    "incident_id": "INC-101",
+    "title": "Disk full on inventory-service host",
+    "service": "inventory-service",
+    "severity": "P2",
+    "occurred_at": "2026-03-05T02:30:00Z",
+    "ttr_min": 28,
+    "symptoms": {
+      "message": "The inventory-service host reported no space left on device, causing all write operations to fail. Log rotation had stopped and temporary files had consumed the remaining 4 GB. Reads were still succeeding but any attempt to persist state returned ENOSPC.",
+      "metrics": {
+        "error_rate": 0.45,
+        "p95_latency_ms": 3100,
+        "affected_users_pct": 22
+      }
+    },
+    "error_signature": "2026-03-05T02:28:41Z ERROR inventory-service [storage] write failed: no space left on device (errno=ENOSPC path=/var/data/inventory)",
+    "root_cause": "Disk exhaustion caused by unrotated log files and accumulated temporary export files",
+    "root_cause_category": "disk_full",
+    "fix_steps": [
+      {"step": "Identify and delete stale temporary export files under /var/data/inventory/tmp", "status": "worked", "note": "Freed 3.2 GB immediately"},
+      {"step": "Force log rotation on the inventory-service nodes", "status": "worked", "note": "Freed additional 800 MB and restored write capacity"}
+    ],
+    "resolution": "Deleted temporary export files and forced log rotation, restoring disk space and write operations within 28 minutes.",
+    "runbook": "DISK-FULL-RECOVERY",
+    "runbook_summary": "Identify largest temporary and log files, delete or rotate them, verify free space above 20%, and add disk-usage alerting at 80%.",
+    "outcome": "worked",
+    "impact": "22% of users could not complete inventory-dependent operations for 28 minutes.",
+    "lessons": [
+      "Add disk-usage alert at 80% threshold",
+      "Schedule automated cleanup of temporary export files older than 24 hours"
+    ],
+    "tags": ["disk", "storage", "inventory-service"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-102",
+    "title": "Memory leak in search-service causing OOM restarts",
+    "service": "search-service",
+    "severity": "P1",
+    "occurred_at": "2026-03-14T11:05:00Z",
+    "ttr_min": 55,
+    "symptoms": {
+      "message": "The search-service pods were restarting every 30 to 40 minutes with OOMKilled status after RSS memory climbed from 512 MB to 1.8 GB over roughly 3 hours. Search latency spiked during the pre-restart ramp and users saw 503 errors immediately after each restart. Heap dumps showed large retained caches of parsed query ASTs that were never evicted.",
+      "metrics": {
+        "error_rate": 0.18,
+        "p95_latency_ms": 4800,
+        "affected_users_pct": 30
+      }
+    },
+    "error_signature": "2026-03-14T11:04:12Z FATAL search-service [runtime] OOMKilled: container exceeded memory limit 2Gi (rss=1847Mi); restarting pod search-service-7d9f8b-xk2pq",
+    "root_cause": "Unbounded in-memory AST cache for parsed search queries introduced in release v3.1.0 caused memory to grow without bound",
+    "root_cause_category": "memory_leak",
+    "fix_steps": [
+      {"step": "Restart the search-service pods to recover immediate availability", "status": "partial", "note": "Restored service briefly but OOM restarts recurred within 35 minutes as the leak continued"},
+      {"step": "Roll back to release v3.0.8 to remove the unbounded cache", "status": "worked", "note": "Memory stabilised at 530 MB and OOM restarts stopped entirely"}
+    ],
+    "resolution": "Rolled back to release v3.0.8 to remove the unbounded AST cache, stopping OOM restarts and stabilising memory usage.",
+    "runbook": "MEM-LEAK-ROLLBACK",
+    "runbook_summary": "Restart pods for immediate relief, identify the leaking release via heap dump comparison, roll back to the last stable release, and add memory-usage alerting at 80% of limit.",
+    "outcome": "worked",
+    "impact": "30% of search users experienced intermittent 503 errors and elevated latency during the 55-minute incident window.",
+    "lessons": [
+      "Require bounded cache sizes with eviction policies in all new code",
+      "Add heap-growth trending alert to catch leaks before OOM"
+    ],
+    "tags": ["memory-leak", "oom", "search-service", "rollback"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-103",
+    "title": "TLS certificate expiry on auth-service",
+    "service": "auth-service",
+    "severity": "P1",
+    "occurred_at": "2026-03-22T00:01:00Z",
+    "ttr_min": 18,
+    "symptoms": {
+      "message": "Auth-service began rejecting all HTTPS connections at midnight when its TLS certificate expired. Clients received certificate-validation errors and could not authenticate. Internal services relying on mTLS also failed their handshakes.",
+      "metrics": {
+        "error_rate": 0.99,
+        "p95_latency_ms": 120,
+        "affected_users_pct": 100
+      }
+    },
+    "error_signature": "2026-03-22T00:00:03Z ERROR auth-service [tls] certificate expired: CN=auth.internal notAfter=2026-03-21T23:59:59Z",
+    "root_cause": "TLS certificate for auth-service expired because the 90-day renewal reminder was not actioned",
+    "root_cause_category": "cert_expiry",
+    "fix_steps": [
+      {"step": "Renew and deploy the TLS certificate for auth-service using the internal CA", "status": "worked", "note": "Certificate renewed with a 1-year validity and hot-reloaded within 18 minutes"}
+    ],
+    "resolution": "Renewed the expired TLS certificate and hot-reloaded it, restoring all auth connections within 18 minutes.",
+    "runbook": "TLS-CERT-RENEWAL",
+    "runbook_summary": "Identify expiring certificate, generate CSR, sign with internal CA, deploy to secret store, and trigger hot reload; add 30-day pre-expiry alert.",
+    "outcome": "worked",
+    "impact": "100% of users could not authenticate for 18 minutes.",
+    "lessons": [
+      "Automate certificate renewal 30 days before expiry",
+      "Alert on certificates expiring within 14 days"
+    ],
+    "tags": ["tls", "certificate", "auth-service"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-104",
+    "title": "Database connection pool exhaustion on checkout-api",
+    "service": "checkout-api",
+    "severity": "P1",
+    "occurred_at": "2026-04-12T09:14:00Z",
+    "ttr_min": 42,
+    "symptoms": {
+      "message": "The checkout-api stopped processing orders when all 20 database connections in the pool were held by slow analytical queries that had leaked from a reporting job. New checkout requests queued until they timed out with a 503 response. Error logs showed repeated pool-exhausted warnings with a 30-second wait timeout.",
+      "metrics": {
+        "error_rate": 0.31,
+        "p95_latency_ms": 5200,
+        "affected_users_pct": 40
+      }
+    },
+    "error_signature": "2026-04-12T09:13:55Z ERROR checkout-api [db] connection pool exhausted: waited 30000ms for connection (pool_size=20 checked_out=20 overflow=0)",
+    "root_cause": "Database connection pool size of 20 was too small when a runaway reporting job leaked connections and saturated the pool",
+    "root_cause_category": "db_pool_exhaustion",
+    "fix_steps": [
+      {"step": "Restart the application only without fixing the pool exhaustion", "status": "partial", "note": "Checkout recovered briefly but the pool exhausted again within an hour as the leak continued"},
+      {"step": "Increase the database connection pool size to 100", "status": "worked", "note": "Pool headroom restored and checkout requests immediately began succeeding"},
+      {"step": "Restart the checkout-api pods to clear leaked connections", "status": "worked", "note": "Cleared all leaked connections and confirmed pool utilisation dropped to 8%"}
+    ],
+    "resolution": "Increased the database connection pool size to 100 and restarted checkout-api pods to clear leaked connections, restoring checkout operations within 42 minutes.",
+    "runbook": "DB-POOL-RECOVERY",
+    "runbook_summary": "Identify pool exhaustion via error logs, kill runaway connections, increase pool size, restart service, and add pool-utilisation alert at 80%.",
+    "outcome": "worked",
+    "impact": "40% of checkout users received 503 errors for 42 minutes during peak trading hours.",
+    "lessons": [
+      "Separate reporting queries from the transactional connection pool",
+      "Set pool-utilisation alert at 80% to catch exhaustion early"
+    ],
+    "tags": ["db-pool", "checkout-api", "connection-exhaustion"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-105",
+    "title": "Bad deployment broke payment-service",
+    "service": "payment-service",
+    "severity": "P1",
+    "occurred_at": "2026-04-18T14:30:00Z",
+    "ttr_min": 35,
+    "symptoms": {
+      "message": "Immediately after deploying release v4.2.0 of payment-service, the error rate climbed to 28% with NullPointerException traces in the logs. The new release had a missing null-guard on the card-type field that caused failures for 28% of payment requests where card type was omitted.",
+      "metrics": {
+        "error_rate": 0.28,
+        "p95_latency_ms": 3900,
+        "affected_users_pct": 28
+      }
+    },
+    "error_signature": "2026-04-18T14:31:02Z ERROR payment-service [processor] NullPointerException at PaymentProcessor.java:142 field=cardType value=null release=v4.2.0",
+    "root_cause": "Release v4.2.0 introduced a null-pointer regression on the cardType field that was not caught in testing because the test suite did not cover null card types",
+    "root_cause_category": "bad_deploy",
+    "fix_steps": [
+      {"step": "Scale out the payment-service to absorb the elevated error load", "status": "failed", "note": "Scaling out added more pods running the broken release and did not reduce the error rate"},
+      {"step": "Roll back to release v4.1.9 to remove the regression", "status": "worked", "note": "Error rate dropped to 0.1% within 5 minutes of rollback completing"}
+    ],
+    "resolution": "Rolled back payment-service to release v4.1.9, eliminating the NullPointerException regression and restoring normal payment processing.",
+    "runbook": "BAD-DEPLOY-ROLLBACK",
+    "runbook_summary": "Identify the breaking release from deployment history, roll back to the last known-good version, verify error rate drops, and add null-guard to the failing field before re-deploying.",
+    "outcome": "worked",
+    "impact": "28% of payment transactions failed for 35 minutes.",
+    "lessons": [
+      "Add test cases for null card-type inputs before releasing payment changes",
+      "Never scale out a service that is failing due to a code bug"
+    ],
+    "tags": ["bad-deploy", "payment-service", "rollback", "regression"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-106",
+    "title": "Upstream timeout cascade from notification-service",
+    "service": "notification-service",
+    "severity": "P2",
+    "occurred_at": "2026-04-25T16:00:00Z",
+    "ttr_min": 32,
+    "symptoms": {
+      "message": "The notification-service began timing out when calling the upstream email-relay provider, causing retries to pile up and exhaust the internal HTTP client thread pool. Downstream order-service calls to notification-service then started timing out at 10 seconds, causing order confirmations to be delayed. No emails were lost because messages queued in the outbox.",
+      "metrics": {
+        "error_rate": 0.12,
+        "p95_latency_ms": 9800,
+        "affected_users_pct": 12
+      }
+    },
+    "error_signature": "2026-04-25T15:59:44Z WARN notification-service [email-relay] upstream timeout after 5000ms (retries=3 provider=smtp-relay.internal host=relay01)",
+    "root_cause": "The external email relay provider suffered a brief outage, causing timeout cascades into the notification-service retry loop",
+    "root_cause_category": "upstream_timeout",
+    "fix_steps": [
+      {"step": "Reduce the upstream email-relay timeout to 2000ms and enable circuit breaker", "status": "worked", "note": "Stopped thread-pool exhaustion and allowed the service to shed upstream load gracefully"},
+      {"step": "Drain and reprocess the outbox queue once the relay recovered", "status": "worked", "note": "All queued notifications delivered within 5 minutes of relay recovery"}
+    ],
+    "resolution": "Reduced upstream timeout and enabled circuit breaker, preventing thread exhaustion; outbox messages delivered after relay recovery.",
+    "runbook": "UPSTREAM-TIMEOUT-MITIGATION",
+    "runbook_summary": "Enable circuit breaker on the upstream dependency, reduce timeout to a safe value, check for queued messages, and reprocess once upstream recovers.",
+    "outcome": "worked",
+    "impact": "12% of users did not receive order-confirmation emails on time for 32 minutes.",
+    "lessons": [
+      "All upstream HTTP clients must have a circuit breaker configured",
+      "Set timeout to 2 seconds for non-critical email relay calls"
+    ],
+    "tags": ["timeout", "notification-service", "circuit-breaker", "upstream"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-107",
+    "title": "Cache stampede on inventory-service hot key",
+    "service": "inventory-service",
+    "severity": "P2",
+    "occurred_at": "2026-05-03T10:45:00Z",
+    "ttr_min": 25,
+    "symptoms": {
+      "message": "A product-launch event caused the cache entry for SKU-99001 to expire under extremely high concurrent traffic. Thousands of simultaneous cache misses each triggered a full database read, spiking the database CPU to 95% and causing latency spikes across all inventory queries. The cache entry had a hard TTL of 60 seconds with no jitter.",
+      "metrics": {
+        "error_rate": 0.14,
+        "p95_latency_ms": 4200,
+        "affected_users_pct": 20
+      }
+    },
+    "error_signature": "2026-05-03T10:44:58Z WARN inventory-service [cache] stampede detected: key=sku:99001 concurrent_misses=3847 db_cpu_pct=95",
+    "root_cause": "Cache stampede on a hot product key during a launch event caused by zero-jitter TTL and no request coalescing",
+    "root_cause_category": "cache_stampede",
+    "fix_steps": [
+      {"step": "Increase the cache TTL to reduce expiry frequency", "status": "failed", "note": "A longer TTL did not help because the key had already expired and the flood was in progress; under burst traffic even a long TTL eventually expires"},
+      {"step": "Enable request coalescing on the hot key to prevent parallel database reads", "status": "worked", "note": "Collapsed thousands of concurrent misses into a single database read per key expiry"},
+      {"step": "Warm the cache by pre-loading the top 100 product keys before the next launch", "status": "worked", "note": "Prevented the first cache miss from being serviced at peak concurrency"}
+    ],
+    "resolution": "Enabled request coalescing and pre-warmed the cache, eliminating the stampede and restoring normal inventory latency within 25 minutes.",
+    "runbook": "CACHE-STAMPEDE-MITIGATION",
+    "runbook_summary": "Enable single-flight request coalescing on hot keys, warm the cache with a pre-load job, add TTL jitter of ±10%, and monitor concurrent-miss rate.",
+    "outcome": "worked",
+    "impact": "20% of users experienced slow inventory responses and intermittent errors for 25 minutes during the launch event.",
+    "lessons": [
+      "Always add TTL jitter to prevent synchronised expiry under high load",
+      "Pre-warm cache for known high-traffic events"
+    ],
+    "tags": ["cache-stampede", "inventory-service", "redis"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-108",
+    "title": "Order queue backlog in order-service",
+    "service": "order-service",
+    "severity": "P2",
+    "occurred_at": "2026-05-11T08:20:00Z",
+    "ttr_min": 48,
+    "symptoms": {
+      "message": "The order-service queue depth climbed from 0 to 180,000 messages in 20 minutes after a consumer crash left no active workers. Orders were accepted and enqueued but not processed, causing confirmation delays. The dead-letter queue began filling after message TTL expiry.",
+      "metrics": {
+        "error_rate": 0.08,
+        "p95_latency_ms": 2100,
+        "affected_users_pct": 18
+      }
+    },
+    "error_signature": "2026-05-11T08:19:33Z ERROR order-service [queue] no active consumers on queue orders.process depth=180432 dlq_depth=214",
+    "root_cause": "All order consumer workers crashed due to an unhandled deserialization exception in a new message schema, leaving the queue unprocessed",
+    "root_cause_category": "queue_backlog",
+    "fix_steps": [
+      {"step": "Restart the order-service consumer workers with the previous message schema handler", "status": "worked", "note": "Consumers restarted and began draining the backlog at 4,000 messages per minute"},
+      {"step": "Move expired dead-letter messages to a replay queue for reprocessing", "status": "worked", "note": "Recovered 214 orders from the dead-letter queue and confirmed delivery"}
+    ],
+    "resolution": "Restarted consumer workers and replayed most dead-letter messages, draining the backlog within 48 minutes; a small number of messages with invalid schema were discarded.",
+    "runbook": "QUEUE-BACKLOG-RECOVERY",
+    "runbook_summary": "Identify consumer crash cause, restart consumers with safe schema handler, monitor drain rate, replay dead-letter messages, and add consumer liveness alerting.",
+    "outcome": "partial",
+    "impact": "18% of orders were delayed by up to 48 minutes; approximately 12 orders with corrupted schema could not be automatically recovered and required manual reprocessing.",
+    "lessons": [
+      "Add consumer liveness alerts that fire within 2 minutes of all workers stopping",
+      "Schema changes must include a backwards-compatible deserialization fallback"
+    ],
+    "tags": ["queue", "order-service", "consumer", "backlog"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-109",
+    "title": "Connection pool exhaustion on order-service database",
+    "service": "order-service",
+    "severity": "P1",
+    "occurred_at": "2026-05-20T13:45:00Z",
+    "ttr_min": 38,
+    "symptoms": {
+      "message": "Order-service database connections were exhausted during a high-order-volume window when the pool hit its ceiling of 15 connections. Requests queued and timed out with database connection unavailable errors. The pattern closely matched INC-104 but on the order-service rather than checkout-api, with slightly different pool sizing.",
+      "metrics": {
+        "error_rate": 0.27,
+        "p95_latency_ms": 4900,
+        "affected_users_pct": 35
+      }
+    },
+    "error_signature": "2026-05-20T13:44:51Z ERROR order-service [db] connection pool exhausted: all 15 connections in use, timeout waiting for available slot (wait_ms=30000)",
+    "root_cause": "Database connection pool size of 15 was insufficient for peak order volume, leading to pool exhaustion and request timeouts",
+    "root_cause_category": "db_pool_exhaustion",
+    "fix_steps": [
+      {"step": "Increase the database connection pool size to 80", "status": "worked", "note": "Pool expanded and queued requests immediately began succeeding"},
+      {"step": "Restart the order-service pods to clear stale held connections", "status": "worked", "note": "Cleared 3 connections held by timed-out requests and confirmed pool utilisation at 12%"}
+    ],
+    "resolution": "Increased the database connection pool size to 80 and restarted order-service pods to clear stale connections, restoring order processing within 38 minutes.",
+    "runbook": "DB-POOL-RECOVERY",
+    "runbook_summary": "Identify pool exhaustion, expand pool size to appropriate capacity, restart service to clear stale connections, and monitor pool utilisation.",
+    "outcome": "worked",
+    "impact": "35% of order operations failed for 38 minutes.",
+    "lessons": [
+      "Pool sizes should be set based on peak concurrency analysis, not defaults",
+      "Apply DB-POOL-RECOVERY runbook immediately when pool-exhausted errors appear"
+    ],
+    "tags": ["db-pool", "order-service", "connection-exhaustion"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-110",
+    "title": "DNS resolution failure in payment-service",
+    "service": "payment-service",
+    "severity": "P1",
+    "occurred_at": "2026-06-02T19:10:00Z",
+    "ttr_min": 22,
+    "symptoms": {
+      "message": "The payment-service could not resolve the internal DNS name for the fraud-check API after a CoreDNS config change was pushed. All payment attempts that required fraud checking failed with a name resolution error, causing a 35% error rate for payment requests.",
+      "metrics": {
+        "error_rate": 0.35,
+        "p95_latency_ms": 3300,
+        "affected_users_pct": 35
+      }
+    },
+    "error_signature": "2026-06-02T19:09:44Z ERROR payment-service [dns] name resolution failed: fraud-check.internal: no such host (resolver=10.96.0.10:53)",
+    "root_cause": "A CoreDNS configuration change removed the search domain entry for the internal services namespace, breaking DNS resolution for all internal service names",
+    "root_cause_category": "dns_failure",
+    "fix_steps": [
+      {"step": "Revert the CoreDNS configuration change to restore the internal search domain", "status": "worked", "note": "DNS resolution restored within 90 seconds of the CoreDNS config rollback"}
+    ],
+    "resolution": "Reverted the CoreDNS configuration change, restoring internal DNS resolution and payment fraud-check calls within 22 minutes.",
+    "runbook": "DNS-FAILURE-RECOVERY",
+    "runbook_summary": "Identify failing DNS lookup, check recent CoreDNS config changes, revert the breaking change, verify resolution with nslookup, and add DNS health checks.",
+    "outcome": "worked",
+    "impact": "35% of payment requests failed for 22 minutes.",
+    "lessons": [
+      "DNS configuration changes must be tested in staging with integration tests before production",
+      "Add CoreDNS health-check alerting"
+    ],
+    "tags": ["dns", "payment-service", "coredns"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-111",
+    "title": "Recurring memory leak in search-service after feature flag enabled",
+    "service": "search-service",
+    "severity": "P1",
+    "occurred_at": "2026-06-14T09:30:00Z",
+    "ttr_min": 40,
+    "symptoms": {
+      "message": "After enabling the real-time-suggestions feature flag in release v3.2.1, search-service memory climbed steadily from 600 MB to 1.9 GB over 4 hours before triggering OOMKilled restarts. The pattern was identical to INC-102: heap retained large unbounded in-memory caches with no eviction policy.",
+      "metrics": {
+        "error_rate": 0.22,
+        "p95_latency_ms": 5100,
+        "affected_users_pct": 33
+      }
+    },
+    "error_signature": "2026-06-14T09:29:01Z FATAL search-service [runtime] OOMKilled: container exceeded memory limit 2Gi (rss=1934Mi); restarting pod search-service-5c7b9d-mn4rw release=v3.2.1",
+    "root_cause": "The real-time-suggestions feature in release v3.2.1 introduced another unbounded suggestion cache that grew without eviction, repeating the INC-102 pattern",
+    "root_cause_category": "memory_leak",
+    "fix_steps": [
+      {"step": "Restart the search-service pods to recover immediate availability", "status": "partial", "note": "Pods recovered but OOM restarts recurred within 40 minutes as the leak continued under the enabled feature flag"},
+      {"step": "Roll back to release v3.2.0 to disable the leaking feature", "status": "worked", "note": "Memory stabilised at 620 MB and OOM restarts stopped; confirmed identical pattern to INC-102"}
+    ],
+    "resolution": "Rolled back to release v3.2.0 to remove the leaking suggestions cache, stopping OOM restarts and stabilising memory.",
+    "runbook": "MEM-LEAK-ROLLBACK",
+    "runbook_summary": "Restart for immediate relief, identify leaking release via memory growth comparison with previous incidents, roll back, and enforce bounded cache policy before re-enabling feature.",
+    "outcome": "worked",
+    "impact": "33% of search users experienced intermittent 503 errors for 40 minutes.",
+    "lessons": [
+      "Feature flags must be tested under sustained load before enabling in production",
+      "Any feature that introduces an in-memory cache must have a bounded size and eviction policy"
+    ],
+    "tags": ["memory-leak", "oom", "search-service", "rollback", "feature-flag"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-112",
+    "title": "CPU and thread saturation on notification-service",
+    "service": "notification-service",
+    "severity": "P2",
+    "occurred_at": "2026-06-22T15:00:00Z",
+    "ttr_min": 30,
+    "symptoms": {
+      "message": "The notification-service CPU reached 98% across all pods after a burst of 200,000 marketing emails was queued simultaneously. The thread pool saturated at 200 threads and new notifications were rejected with a thread-pool-full error. Async notification delivery fell behind by 15 minutes.",
+      "metrics": {
+        "error_rate": 0.19,
+        "p95_latency_ms": 6700,
+        "affected_users_pct": 14
+      }
+    },
+    "error_signature": "2026-06-22T15:00:11Z ERROR notification-service [thread-pool] pool saturated: 200/200 threads in use, rejecting task (queue_depth=48221 cpu_pct=98)",
+    "root_cause": "Simultaneous bulk email campaign submission saturated the notification-service thread pool and CPU with no rate limiting on campaign ingestion",
+    "root_cause_category": "cpu_thread_saturation",
+    "fix_steps": [
+      {"step": "Throttle the campaign ingest rate to 5,000 messages per minute to shed load", "status": "worked", "note": "CPU dropped to 62% and thread pool freed up within 3 minutes of throttling"},
+      {"step": "Restart the notification-service pods to clear the thread-pool backpressure state", "status": "worked", "note": "Clean restart confirmed thread pool at 12% utilisation with throttling active"}
+    ],
+    "resolution": "Throttled campaign ingest rate and restarted notification-service pods, reducing CPU from 98% to 62% and clearing the thread-pool saturation.",
+    "runbook": "CPU-SATURATION-MITIGATION",
+    "runbook_summary": "Identify the load source, throttle ingestion rate, restart pods to clear backpressure, and add per-campaign rate limiting to prevent recurrence.",
+    "outcome": "worked",
+    "impact": "14% of users experienced delayed notifications for up to 30 minutes.",
+    "lessons": [
+      "Campaign ingestion must have rate limiting to prevent thread-pool saturation",
+      "Add CPU and thread-pool-saturation alerts at 80% threshold"
+    ],
+    "tags": ["cpu", "thread-pool", "notification-service"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-113",
+    "title": "Bad deployment on auth-service broke token validation",
+    "service": "auth-service",
+    "severity": "P1",
+    "occurred_at": "2026-07-05T11:15:00Z",
+    "ttr_min": 28,
+    "symptoms": {
+      "message": "Release v2.5.0 of auth-service introduced a breaking change to the token-signing key ID format. Tokens issued by new pods could not be validated by older pods and vice-versa, causing intermittent 401 errors as requests were load-balanced across mixed-version pods.",
+      "metrics": {
+        "error_rate": 0.42,
+        "p95_latency_ms": 2100,
+        "affected_users_pct": 45
+      }
+    },
+    "error_signature": "2026-07-05T11:15:33Z ERROR auth-service [jwt] token validation failed: unknown kid=v2.5-key-001 (known_kids=[v2.4-key-001]) release=v2.5.0",
+    "root_cause": "Release v2.5.0 changed the JWT key ID format without backward compatibility, causing validation failures on mixed-version deployments during a rolling update",
+    "root_cause_category": "bad_deploy",
+    "fix_steps": [
+      {"step": "Roll back to release v2.4.3 to restore a single consistent key ID format", "status": "worked", "note": "All pods converged to v2.4.3 within 4 minutes and 401 errors stopped immediately"}
+    ],
+    "resolution": "Rolled back auth-service to release v2.4.3, restoring a consistent JWT key ID format across all pods and eliminating 401 errors.",
+    "runbook": "BAD-DEPLOY-ROLLBACK",
+    "runbook_summary": "Identify the breaking release, roll back all pods to the last compatible version, verify error rate drops, and fix the breaking change before re-deploying.",
+    "outcome": "worked",
+    "impact": "45% of authenticated requests failed for 28 minutes during the rolling update window.",
+    "lessons": [
+      "JWT key ID changes must be backward compatible across rolling update windows",
+      "Canary deployments must validate auth flows before full rollout"
+    ],
+    "tags": ["bad-deploy", "auth-service", "jwt", "rollback"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-114",
+    "title": "Bad config change broke order-service rate limits",
+    "service": "order-service",
+    "severity": "P2",
+    "occurred_at": "2026-07-18T09:00:00Z",
+    "ttr_min": 20,
+    "symptoms": {
+      "message": "A configuration change that set the per-user order rate limit to 0 instead of 100 caused every order request to be rejected immediately with a 429 Too Many Requests response. The change was applied via a config map update and took effect without a service restart.",
+      "metrics": {
+        "error_rate": 0.88,
+        "p95_latency_ms": 180,
+        "affected_users_pct": 88
+      }
+    },
+    "error_signature": "2026-07-18T09:00:04Z WARN order-service [rate-limit] request rejected: rate_limit=0 user_id=usr-8841 (config_map=order-limits version=v47)",
+    "root_cause": "Config map update set the per-user rate limit to 0 due to a typo in the Helm values file, causing all order requests to be rate-limited immediately",
+    "root_cause_category": "bad_config",
+    "fix_steps": [
+      {"step": "Revert the config map to the previous version with rate_limit=100", "status": "worked", "note": "Order requests resumed within 30 seconds of the config map revert taking effect"}
+    ],
+    "resolution": "Reverted the config map to restore the rate limit to 100, immediately clearing the 429 responses.",
+    "runbook": "CONFIG-REVERT-RECOVERY",
+    "runbook_summary": "Identify the config change that caused the regression, revert to the previous config version, verify error rate recovers, and add config validation to the CI pipeline.",
+    "outcome": "worked",
+    "impact": "88% of order requests were rejected for 20 minutes.",
+    "lessons": [
+      "Config changes must be validated against a schema that rejects zero or negative rate limits",
+      "Apply config changes with a canary phase before full rollout"
+    ],
+    "tags": ["config", "rate-limit", "order-service"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-115",
+    "title": "Cache stampede on search-service trending results",
+    "service": "search-service",
+    "severity": "P2",
+    "occurred_at": "2026-07-28T12:30:00Z",
+    "ttr_min": 32,
+    "symptoms": {
+      "message": "The trending-results cache key expired simultaneously across all search-service pods during a high-traffic afternoon peak. More than 5,000 concurrent requests hit the database at the same moment, spiking database CPU to 91% and causing search latency to exceed 8 seconds. Request coalescing was not enabled on the trending key.",
+      "metrics": {
+        "error_rate": 0.16,
+        "p95_latency_ms": 8100,
+        "affected_users_pct": 24
+      }
+    },
+    "error_signature": "2026-07-28T12:30:03Z WARN search-service [cache] stampede detected: key=trending:global concurrent_misses=5213 db_cpu_pct=91",
+    "root_cause": "Cache stampede on the trending-results key due to synchronised TTL expiry across all pods and missing request coalescing",
+    "root_cause_category": "cache_stampede",
+    "fix_steps": [
+      {"step": "Enable request coalescing on the trending-results key to prevent parallel database reads", "status": "worked", "note": "Concurrent database reads collapsed to 1 per expiry event and CPU dropped to 34%"},
+      {"step": "Warm the cache by pre-loading the trending-results key every 5 minutes with a background job", "status": "worked", "note": "Ensured the key was always warm, preventing future stampedes on this key"}
+    ],
+    "resolution": "Enabled request coalescing and set up a cache-warming background job, eliminating the stampede and restoring normal search latency within 32 minutes.",
+    "runbook": "CACHE-STAMPEDE-MITIGATION",
+    "runbook_summary": "Enable single-flight coalescing on hot keys, pre-warm high-traffic keys with a background job, add TTL jitter, and monitor concurrent-miss rates.",
+    "outcome": "worked",
+    "impact": "24% of search users experienced high latency and partial errors for 32 minutes.",
+    "lessons": [
+      "All cache keys serving high-traffic queries must have request coalescing enabled",
+      "Background warm jobs prevent stampede for known high-traffic keys"
+    ],
+    "tags": ["cache-stampede", "search-service", "redis"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-116",
+    "title": "Missing database index causing full table scans on inventory-service",
+    "service": "inventory-service",
+    "severity": "P2",
+    "occurred_at": "2026-08-06T10:00:00Z",
+    "ttr_min": 45,
+    "symptoms": {
+      "message": "After a schema migration that added a new warehouse_id column to the inventory table, queries filtering on warehouse_id started performing full table scans instead of using an index. With 12 million rows in the inventory table, each scan took 3 to 8 seconds, causing p95 latency to jump from 120 ms to 6,500 ms.",
+      "metrics": {
+        "error_rate": 0.09,
+        "p95_latency_ms": 6500,
+        "affected_users_pct": 16
+      }
+    },
+    "error_signature": "2026-08-06T09:59:51Z WARN inventory-service [db] slow query detected: 7243ms SELECT * FROM inventory WHERE warehouse_id=? (rows_examined=12048311 rows_returned=842 plan=full_table_scan)",
+    "root_cause": "The schema migration that added the warehouse_id column did not include a corresponding index, causing full table scans on all warehouse-filtered queries",
+    "root_cause_category": "missing_db_index",
+    "fix_steps": [
+      {"step": "Add a database index on the warehouse_id column using a concurrent index build to avoid table lock", "status": "worked", "note": "Index built in 12 minutes; p95 latency dropped from 6,500 ms to 110 ms immediately after"}
+    ],
+    "resolution": "Added a concurrent database index on warehouse_id, reducing query time from 7 seconds to under 110 ms.",
+    "runbook": "MISSING-INDEX-RECOVERY",
+    "runbook_summary": "Identify slow query from explain plan, build index concurrently to avoid lock, verify latency improvement, and add index coverage check to the migration CI step.",
+    "outcome": "worked",
+    "impact": "16% of inventory queries were severely slow for 45 minutes.",
+    "lessons": [
+      "Schema migrations must include index creation for any filterable column",
+      "Add slow-query alerting at 2-second threshold"
+    ],
+    "tags": ["database", "index", "inventory-service", "migration"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-117",
+    "title": "Database connection pool exhaustion on checkout-api during flash sale",
+    "service": "checkout-api",
+    "severity": "P1",
+    "occurred_at": "2026-08-22T12:00:00Z",
+    "ttr_min": 30,
+    "symptoms": {
+      "message": "During a flash sale event the checkout-api database connection pool exhausted at 20 connections as concurrent checkout requests surged 5x above normal. The same pool-exhausted error pattern as INC-104 appeared in logs. Checkout orders failed with 503 responses for 30 minutes until the pool was expanded.",
+      "metrics": {
+        "error_rate": 0.38,
+        "p95_latency_ms": 6100,
+        "affected_users_pct": 50
+      }
+    },
+    "error_signature": "2026-08-22T12:00:07Z ERROR checkout-api [db] connection pool exhausted: waited 30000ms for connection (pool_size=20 checked_out=20 overflow=0) flash_sale=true",
+    "root_cause": "Database connection pool size was not scaled up before the flash sale event, exhausting under 5x normal concurrency",
+    "root_cause_category": "db_pool_exhaustion",
+    "fix_steps": [
+      {"step": "Increase the database connection pool size to 100", "status": "worked", "note": "Pool expanded and checkout orders immediately began succeeding"},
+      {"step": "Restart the checkout-api pods to release any held connections", "status": "worked", "note": "Pool utilisation settled at 22% after restart with the expanded pool"}
+    ],
+    "resolution": "Increased the database connection pool size to 100 and restarted checkout-api pods, restoring checkout operations within 30 minutes.",
+    "runbook": "DB-POOL-RECOVERY",
+    "runbook_summary": "Identify pool exhaustion from logs, increase pool size, restart service to clear held connections, and pre-scale pool before future high-traffic events.",
+    "outcome": "worked",
+    "impact": "50% of checkout users received 503 errors for 30 minutes during the flash sale.",
+    "lessons": [
+      "Pre-scale connection pools before planned high-traffic events",
+      "Add pool-utilisation alerting at 70% to allow proactive action"
+    ],
+    "tags": ["db-pool", "checkout-api", "connection-exhaustion", "flash-sale"],
+    "source": "seed"
+  },
+  {
+    "incident_id": "INC-118",
+    "title": "Bad deployment on payment-service broke 3DS flow",
+    "service": "payment-service",
+    "severity": "P1",
+    "occurred_at": "2026-09-10T08:45:00Z",
+    "ttr_min": 60,
+    "symptoms": {
+      "message": "Release v4.5.0 of payment-service broke the 3DS authentication flow due to an incorrect redirect URL format introduced in the new payment gateway abstraction layer. Customers attempting 3DS-required payments received a blank redirect page and their transactions were declined. Only 3DS transactions were affected; non-3DS payments continued normally.",
+      "metrics": {
+        "error_rate": 0.21,
+        "p95_latency_ms": 4400,
+        "affected_users_pct": 21
+      }
+    },
+    "error_signature": "2026-09-10T08:45:11Z ERROR payment-service [3ds] invalid redirect_url format: got 'null/3ds/callback' expected 'https://pay.example.com/3ds/callback' release=v4.5.0",
+    "root_cause": "Release v4.5.0 introduced a null base URL in the 3DS redirect URL builder when the PAYMENT_BASE_URL environment variable was not set in the new gateway abstraction layer",
+    "root_cause_category": "bad_deploy",
+    "fix_steps": [
+      {"step": "Scale out the payment-service to add more pods", "status": "failed", "note": "Scaling out replicated the broken release and did not fix the redirect URL bug"},
+      {"step": "Roll back to release v4.4.2 to restore the working 3DS flow", "status": "worked", "note": "3DS redirect URLs were correct immediately after rollback and transaction success rate recovered"},
+      {"step": "Verify that the PAYMENT_BASE_URL environment variable is set and correct in all pods", "status": "worked", "note": "Confirmed root cause and documented for v4.5.0 re-release checklist"}
+    ],
+    "resolution": "Rolled back to release v4.4.2 and verified environment variable configuration, restoring the 3DS flow within 60 minutes.",
+    "runbook": "BAD-DEPLOY-ROLLBACK",
+    "runbook_summary": "Identify broken release, roll back to last known-good version, verify fix, check all required environment variables before re-deploying the new release.",
+    "outcome": "partial",
+    "impact": "21% of payment transactions requiring 3DS authentication failed for 60 minutes; approximately 3% of affected customers did not retry successfully.",
+    "lessons": [
+      "All required environment variables must be validated at startup; fail fast if missing",
+      "3DS flows must be included in pre-deploy smoke tests"
+    ],
+    "tags": ["bad-deploy", "payment-service", "3ds", "rollback"],
+    "source": "seed"
+  }
+]

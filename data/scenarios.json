@@ -1,0 +1,334 @@
+[
+  {
+    "id": "db-pool-exhaustion",
+    "title": "Database Connection Pool Exhaustion",
+    "description": "Checkout-api database connection pool is fully saturated under high load. Orders are failing with 503 responses.",
+    "service": "checkout-api",
+    "is_novel": false,
+    "expected_match": ["INC-104", "INC-117", "INC-109"],
+    "expected_runbook": "DB-POOL-RECOVERY",
+    "alert_template": {
+      "service": "checkout-api",
+      "message": "Database connection pool exhausted: all 20 connections in use, requests timing out after 30000ms. Checkout orders failing with 503.",
+      "severity": null,
+      "metrics": {
+        "error_rate": 0.33,
+        "p95_latency_ms": 5400,
+        "affected_users_pct": 42,
+        "requests_per_min": 3200
+      },
+      "timestamp": "__NOW__"
+    },
+    "context": {
+      "logs": [
+        {"offset_sec": -290, "level": "INFO",  "line": "checkout-api [db] pool stats: checked_out=18 pool_size=20 overflow=0 wait_queue=12"},
+        {"offset_sec": -250, "level": "WARN",  "line": "checkout-api [db] connection pool near capacity: checked_out=19/20 wait_queue=47"},
+        {"offset_sec": -200, "level": "ERROR", "line": "checkout-api [db] connection pool exhausted: waited 30000ms for connection (pool_size=20 checked_out=20 overflow=0)"},
+        {"offset_sec": -180, "level": "ERROR", "line": "checkout-api [db] connection pool exhausted: waited 30000ms for connection (pool_size=20 checked_out=20 overflow=0)"},
+        {"offset_sec": -160, "level": "ERROR", "line": "checkout-api [http] POST /checkout -> 503 Service Unavailable (reason=db_pool_exhausted latency_ms=30042)"},
+        {"offset_sec": -140, "level": "ERROR", "line": "checkout-api [http] POST /checkout -> 503 Service Unavailable (reason=db_pool_exhausted latency_ms=30038)"},
+        {"offset_sec": -120, "level": "ERROR", "line": "checkout-api [db] connection pool exhausted: waited 30000ms for connection (pool_size=20 checked_out=20 overflow=0)"},
+        {"offset_sec": -90,  "level": "WARN",  "line": "checkout-api [db] long-running query detected: analytical report query held connection for 180s (query_id=rpt-8821)"},
+        {"offset_sec": -60,  "level": "ERROR", "line": "checkout-api [http] POST /checkout -> 503 Service Unavailable (reason=db_pool_exhausted latency_ms=30041)"},
+        {"offset_sec": -40,  "level": "ERROR", "line": "checkout-api [db] connection pool exhausted: waited 30000ms for connection (pool_size=20 checked_out=20 overflow=0)"},
+        {"offset_sec": -20,  "level": "WARN",  "line": "checkout-api [db] pool stats: checked_out=20 pool_size=20 overflow=0 wait_queue=214 total_timeouts=88"},
+        {"offset_sec": 0,    "level": "ERROR", "line": "checkout-api [db] connection pool exhausted: waited 30000ms for connection (pool_size=20 checked_out=20 overflow=0)"}
+      ],
+      "metrics": {
+        "baseline": {
+          "error_rate": 0.01,
+          "p95_latency_ms": 210,
+          "affected_users_pct": 1,
+          "requests_per_min": 3200
+        },
+        "peak": {
+          "error_rate": 0.33,
+          "p95_latency_ms": 5400,
+          "affected_users_pct": 42,
+          "requests_per_min": 3200
+        }
+      },
+      "deployments": [
+        {
+          "version": "v5.1.2",
+          "minutes_before_alert": 4320,
+          "author": "ci-bot",
+          "summary": "Added analytical reporting endpoint for the finance team"
+        }
+      ]
+    },
+    "outcomes": {
+      "required_actions": ["increase_db_pool", "restart_service"],
+      "partial_actions": ["restart_service"],
+      "harmful_actions": []
+    }
+  },
+  {
+    "id": "memory-leak",
+    "title": "Memory Leak Causing OOM Restarts",
+    "description": "Search-service pods are restarting every 30-40 minutes due to OOMKilled. Memory grows steadily after the last deployment.",
+    "service": "search-service",
+    "is_novel": false,
+    "expected_match": ["INC-102", "INC-111"],
+    "expected_runbook": "MEM-LEAK-ROLLBACK",
+    "alert_template": {
+      "service": "search-service",
+      "message": "OOMKilled restarts detected: search-service pods are being killed for exceeding 2Gi memory limit. Memory grows from 600MB to 1.9GB over 3 hours.",
+      "severity": null,
+      "metrics": {
+        "error_rate": 0.20,
+        "p95_latency_ms": 4600,
+        "affected_users_pct": 28,
+        "requests_per_min": 8100
+      },
+      "timestamp": "__NOW__"
+    },
+    "context": {
+      "logs": [
+        {"offset_sec": -310, "level": "INFO",  "line": "search-service [runtime] memory stats: rss=620Mi heap_used=480Mi release=v3.3.0"},
+        {"offset_sec": -270, "level": "WARN",  "line": "search-service [runtime] memory growing: rss=920Mi heap_used=710Mi (delta=+300Mi over 40min)"},
+        {"offset_sec": -240, "level": "WARN",  "line": "search-service [cache] autocomplete-cache size=342817 entries (no eviction policy configured)"},
+        {"offset_sec": -200, "level": "WARN",  "line": "search-service [runtime] memory growing: rss=1280Mi heap_used=1050Mi (delta=+360Mi over 40min)"},
+        {"offset_sec": -160, "level": "WARN",  "line": "search-service [runtime] memory growing: rss=1650Mi heap_used=1340Mi (delta=+370Mi over 40min)"},
+        {"offset_sec": -120, "level": "ERROR", "line": "search-service [runtime] memory limit approaching: rss=1840Mi limit=2048Mi (utilisation=90%)"},
+        {"offset_sec": -90,  "level": "WARN",  "line": "search-service [cache] autocomplete-cache size=1284011 entries growing unbounded"},
+        {"offset_sec": -60,  "level": "FATAL", "line": "search-service [runtime] OOMKilled: container exceeded memory limit 2Gi (rss=1923Mi); restarting pod search-service-6c8a2b-pq3rw release=v3.3.0"},
+        {"offset_sec": -40,  "level": "INFO",  "line": "search-service [runtime] pod restarted: rss=622Mi (fresh start)"},
+        {"offset_sec": -20,  "level": "WARN",  "line": "search-service [runtime] memory growing again: rss=840Mi (3 OOM restarts in last 2 hours)"},
+        {"offset_sec": -10,  "level": "WARN",  "line": "search-service [cache] autocomplete-cache size=290442 entries (unbounded growth continuing)"},
+        {"offset_sec": 0,    "line": "search-service [runtime] memory growing: rss=1050Mi heap_used=840Mi release=v3.3.0", "level": "WARN"}
+      ],
+      "metrics": {
+        "baseline": {
+          "error_rate": 0.01,
+          "p95_latency_ms": 180,
+          "affected_users_pct": 1,
+          "requests_per_min": 8100
+        },
+        "peak": {
+          "error_rate": 0.20,
+          "p95_latency_ms": 4600,
+          "affected_users_pct": 28,
+          "requests_per_min": 8100
+        }
+      },
+      "deployments": [
+        {
+          "version": "v3.3.0",
+          "minutes_before_alert": 180,
+          "author": "search-team",
+          "summary": "Added real-time autocomplete suggestions with in-memory cache"
+        },
+        {
+          "version": "v3.2.9",
+          "minutes_before_alert": 4500,
+          "author": "ci-bot",
+          "summary": "Dependency updates and minor search ranking fixes"
+        }
+      ]
+    },
+    "outcomes": {
+      "required_actions": ["rollback_deployment"],
+      "partial_actions": ["restart_service"],
+      "harmful_actions": []
+    }
+  },
+  {
+    "id": "bad-deploy",
+    "title": "Bad Deployment Breaking Payment Processing",
+    "description": "Payment-service error rate spiked immediately after the latest deployment. Customers are seeing payment failures.",
+    "service": "payment-service",
+    "is_novel": false,
+    "expected_match": ["INC-105", "INC-113", "INC-118"],
+    "expected_runbook": "BAD-DEPLOY-ROLLBACK",
+    "alert_template": {
+      "service": "payment-service",
+      "message": "Payment-service error rate jumped to 25% immediately after deploying v4.6.0. Customers receiving payment declined errors. Error spike correlates precisely with deployment time.",
+      "severity": null,
+      "metrics": {
+        "error_rate": 0.25,
+        "p95_latency_ms": 3700,
+        "affected_users_pct": 25,
+        "requests_per_min": 2400
+      },
+      "timestamp": "__NOW__"
+    },
+    "context": {
+      "logs": [
+        {"offset_sec": -340, "level": "INFO",  "line": "payment-service [deploy] deployment started: v4.6.0 replacing v4.5.3"},
+        {"offset_sec": -300, "level": "INFO",  "line": "payment-service [deploy] rolling update: 2/6 pods updated to v4.6.0"},
+        {"offset_sec": -280, "level": "ERROR", "line": "payment-service [processor] PaymentValidationException: required field 'currency_code' missing (release=v4.6.0)"},
+        {"offset_sec": -260, "level": "ERROR", "line": "payment-service [processor] PaymentValidationException: required field 'currency_code' missing (release=v4.6.0)"},
+        {"offset_sec": -240, "level": "INFO",  "line": "payment-service [deploy] rolling update: 4/6 pods updated to v4.6.0"},
+        {"offset_sec": -220, "level": "ERROR", "line": "payment-service [http] POST /payments -> 422 Unprocessable Entity (reason=validation_error field=currency_code)"},
+        {"offset_sec": -200, "level": "ERROR", "line": "payment-service [processor] PaymentValidationException: required field 'currency_code' missing (release=v4.6.0)"},
+        {"offset_sec": -180, "level": "WARN",  "line": "payment-service [deploy] error rate elevated: 24.8% (threshold=5%) deployment=v4.6.0"},
+        {"offset_sec": -120, "level": "ERROR", "line": "payment-service [http] POST /payments -> 422 Unprocessable Entity (reason=validation_error field=currency_code)"},
+        {"offset_sec": -60,  "level": "ERROR", "line": "payment-service [processor] PaymentValidationException: required field 'currency_code' missing (release=v4.6.0)"},
+        {"offset_sec": -30,  "level": "WARN",  "line": "payment-service [deploy] rollback recommended: error_rate=25.1% correlated with v4.6.0 rollout"},
+        {"offset_sec": 0,    "level": "ERROR", "line": "payment-service [processor] PaymentValidationException: required field 'currency_code' missing count=847 in last 60s release=v4.6.0"}
+      ],
+      "metrics": {
+        "baseline": {
+          "error_rate": 0.01,
+          "p95_latency_ms": 220,
+          "affected_users_pct": 1,
+          "requests_per_min": 2400
+        },
+        "peak": {
+          "error_rate": 0.25,
+          "p95_latency_ms": 3700,
+          "affected_users_pct": 25,
+          "requests_per_min": 2400
+        }
+      },
+      "deployments": [
+        {
+          "version": "v4.6.0",
+          "minutes_before_alert": 5,
+          "author": "payments-team",
+          "summary": "New payment gateway abstraction layer with multi-currency support"
+        },
+        {
+          "version": "v4.5.3",
+          "minutes_before_alert": 4320,
+          "author": "ci-bot",
+          "summary": "Hotfix: improved 3DS error messages"
+        }
+      ]
+    },
+    "outcomes": {
+      "required_actions": ["rollback_deployment"],
+      "partial_actions": [],
+      "harmful_actions": ["scale_out"]
+    }
+  },
+  {
+    "id": "cache-stampede",
+    "title": "Cache Stampede on Inventory Hot Key",
+    "description": "Inventory-service is experiencing a cache stampede on a hot product key. Database CPU is spiked and inventory queries are slow.",
+    "service": "inventory-service",
+    "is_novel": false,
+    "expected_match": ["INC-107", "INC-115"],
+    "expected_runbook": "CACHE-STAMPEDE-MITIGATION",
+    "alert_template": {
+      "service": "inventory-service",
+      "message": "Cache stampede detected on inventory-service: hot product key expired under peak traffic causing 4200 concurrent database reads. Database CPU at 93%.",
+      "severity": null,
+      "metrics": {
+        "error_rate": 0.15,
+        "p95_latency_ms": 7800,
+        "affected_users_pct": 22,
+        "requests_per_min": 6400
+      },
+      "timestamp": "__NOW__"
+    },
+    "context": {
+      "logs": [
+        {"offset_sec": -280, "level": "INFO",  "line": "inventory-service [cache] cache stats: hit_rate=0.97 miss_rate=0.03 hot_keys=[sku:48291,sku:48292]"},
+        {"offset_sec": -240, "level": "WARN",  "line": "inventory-service [cache] high traffic on key sku:48291: 3200 req/s (normal=120 req/s)"},
+        {"offset_sec": -200, "level": "WARN",  "line": "inventory-service [cache] key sku:48291 TTL expiry imminent (ttl_remaining=8s concurrent_waiters=0)"},
+        {"offset_sec": -190, "level": "WARN",  "line": "inventory-service [cache] stampede detected: key=sku:48291 concurrent_misses=4218 db_cpu_pct=93"},
+        {"offset_sec": -180, "level": "ERROR", "line": "inventory-service [db] slow query: 6842ms SELECT * FROM inventory WHERE sku_id=48291 (rows_examined=9811420 plan=seq_scan)"},
+        {"offset_sec": -160, "level": "ERROR", "line": "inventory-service [db] slow query: 7104ms SELECT stock FROM inventory WHERE sku_id=48291 (db_cpu_pct=94)"},
+        {"offset_sec": -140, "level": "WARN",  "line": "inventory-service [cache] cache miss storm: 4218 goroutines waiting for sku:48291 to be populated"},
+        {"offset_sec": -120, "level": "ERROR", "line": "inventory-service [http] GET /inventory/48291 -> 503 (reason=db_timeout latency_ms=8001)"},
+        {"offset_sec": -90,  "level": "ERROR", "line": "inventory-service [db] query timeout: sku:48291 lookup exceeded 8000ms (db_connections_used=42/50)"},
+        {"offset_sec": -60,  "level": "WARN",  "line": "inventory-service [cache] stampede continuing: key=sku:48291 concurrent_misses=3891 (still no coalescing)"},
+        {"offset_sec": -30,  "level": "ERROR", "line": "inventory-service [http] GET /inventory/48291 -> 503 (reason=db_timeout latency_ms=8001)"},
+        {"offset_sec": 0,    "level": "WARN",  "line": "inventory-service [cache] stampede detected: key=sku:48291 concurrent_misses=3402 db_cpu_pct=91"}
+      ],
+      "metrics": {
+        "baseline": {
+          "error_rate": 0.01,
+          "p95_latency_ms": 130,
+          "affected_users_pct": 1,
+          "requests_per_min": 6400
+        },
+        "peak": {
+          "error_rate": 0.15,
+          "p95_latency_ms": 7800,
+          "affected_users_pct": 22,
+          "requests_per_min": 6400
+        }
+      },
+      "deployments": [
+        {
+          "version": "v2.8.4",
+          "minutes_before_alert": 8640,
+          "author": "inventory-team",
+          "summary": "Increased product launch event traffic handling"
+        }
+      ]
+    },
+    "outcomes": {
+      "required_actions": ["enable_request_coalescing", "warm_cache"],
+      "partial_actions": [],
+      "harmful_actions": ["clear_cache"]
+    }
+  },
+  {
+    "id": "jwt-clock-drift",
+    "title": "JWT Validation Failures from Clock Drift",
+    "description": "Auth-service is rejecting valid tokens with 'token not yet valid' errors. Affected nodes appear to have divergent system clocks causing JWT nbf/exp validation failures.",
+    "service": "auth-service",
+    "is_novel": true,
+    "expected_match": [],
+    "expected_runbook": null,
+    "alert_template": {
+      "service": "auth-service",
+      "message": "Auth-service JWT validation failing intermittently: tokens issued by node auth-2 are rejected by auth-1 and auth-3 with 'token not yet valid' or 'token expired' errors. Failure rate correlates with which node processes the request.",
+      "severity": null,
+      "metrics": {
+        "error_rate": 0.18,
+        "p95_latency_ms": 340,
+        "affected_users_pct": 18,
+        "requests_per_min": 5100
+      },
+      "timestamp": "__NOW__"
+    },
+    "context": {
+      "logs": [
+        {"offset_sec": -350, "level": "INFO",  "line": "auth-service [jwt] token issued: sub=usr-4421 iat=1748515200 exp=1748518800 node=auth-2"},
+        {"offset_sec": -310, "level": "ERROR", "line": "auth-service [jwt] token validation failed: token not yet valid nbf=1748515200 server_time=1748515168 delta=-32s node=auth-1"},
+        {"offset_sec": -290, "level": "ERROR", "line": "auth-service [jwt] token validation failed: token expired exp=1748518800 server_time=1748518852 delta=+52s node=auth-3"},
+        {"offset_sec": -260, "level": "WARN",  "line": "auth-service [jwt] clock skew detected on node auth-1: local_time differs from auth-2 by -38s"},
+        {"offset_sec": -240, "level": "ERROR", "line": "auth-service [jwt] token validation failed: token not yet valid nbf=1748516000 server_time=1748515957 delta=-43s node=auth-1"},
+        {"offset_sec": -200, "level": "WARN",  "line": "auth-service [clock] system time drift: node=auth-3 drift_seconds=+54 last_sync=2h ago"},
+        {"offset_sec": -180, "level": "ERROR", "line": "auth-service [jwt] validation error rate elevated: 17.9% (baseline=0.1%) correlated with mixed-node routing"},
+        {"offset_sec": -140, "level": "WARN",  "line": "auth-service [clock] system time drift: node=auth-1 drift_seconds=-41 (expected <1s)"},
+        {"offset_sec": -100, "level": "ERROR", "line": "auth-service [jwt] token validation failed: token not yet valid nbf=1748516800 server_time=1748516753 delta=-47s node=auth-1"},
+        {"offset_sec": -60,  "level": "WARN",  "line": "auth-service [clock] drift worsening: auth-1 drift=-49s auth-3 drift=+57s (chrony not running on either node)"},
+        {"offset_sec": -30,  "level": "ERROR", "line": "auth-service [jwt] token validation failed: token expired exp=1748519200 server_time=1748519261 delta=+61s node=auth-3"},
+        {"offset_sec": 0,    "level": "ERROR", "line": "auth-service [jwt] validation failures: 921 in last 60s nodes=[auth-1,auth-3] drift_range=106s (auth-1=-49s auth-3=+57s)"}
+      ],
+      "metrics": {
+        "baseline": {
+          "error_rate": 0.01,
+          "p95_latency_ms": 85,
+          "affected_users_pct": 1,
+          "requests_per_min": 5100
+        },
+        "peak": {
+          "error_rate": 0.18,
+          "p95_latency_ms": 340,
+          "affected_users_pct": 18,
+          "requests_per_min": 5100
+        }
+      },
+      "deployments": [
+        {
+          "version": "v2.4.3",
+          "minutes_before_alert": 10080,
+          "author": "auth-team",
+          "summary": "No recent deployments; last release was 7 days ago"
+        }
+      ]
+    },
+    "outcomes": {
+      "required_actions": ["sync_clock"],
+      "partial_actions": [],
+      "harmful_actions": []
+    }
+  }
+]

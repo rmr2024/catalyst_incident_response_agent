@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+pydantic-settings
+sse-starlette
+httpx
+python-dotenv
+anthropic
+groq
+hindsight-client

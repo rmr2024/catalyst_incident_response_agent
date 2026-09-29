@@ -48,6 +48,7 @@ class Recommendation(BaseContractModel):
     recommended_steps: List[str] = Field(default_factory=list, alias="recommendedSteps")
     runbook: str
     failed_before: List[str] = Field(default_factory=list, alias="failedBefore")
+    previous_successful_fix: Optional[str] = Field(default=None, alias="previousSuccessfulFix")
     needs_approval: bool = Field(default=True, alias="needsApproval")
     whats_different: str = Field(default="", alias="whatsDifferent")
     is_novel: bool = Field(default=False, alias="isNovel")
@@ -125,3 +126,5 @@ class SimulationResponse(BaseContractModel):
     incident_id: Optional[str] = Field(default=None, alias="incidentId")
     status: Optional[str] = None
     message: Optional[str] = None
+    incident: Optional[Incident] = None
+    memory_enabled: bool = Field(default=True, alias="memoryEnabled")

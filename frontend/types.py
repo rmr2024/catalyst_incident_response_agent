@@ -54,7 +54,7 @@ class ActionOut(BaseModel):
     idx: int
     step: str
     risky: bool = False
-    status: Literal["pending", "running", "success", "failed"] = "pending"
+    status: str = "pending"
     output: str = ""
     ts: Optional[str] = None
 
@@ -87,7 +87,7 @@ class IncidentSummary(BaseModel):
     severity: Literal["P1", "P2", "P3"]
     severity_reason: str = ""
     source: str = "manual"
-    status: Literal["investigating", "recommended", "awaiting_approval", "executing", "resolved", "mitigated", "fix_failed"]
+    status: str
     headline: Optional[str] = None
     is_novel: bool = False
     memory_used: bool = True
@@ -107,6 +107,33 @@ class IncidentDetail(IncidentSummary):
     smart_alert: Optional[SmartAlert] = None
     actions: List[ActionOut] = Field(default_factory=list)
     events: List[AgentEvent] = Field(default_factory=list)
+
+
+class TimelineEntry(BaseModel):
+    ts: str
+    source: Literal["event", "action", "audit"]
+    kind: str
+    title: str
+    detail: str
+
+
+class FeedbackRequest(BaseModel):
+    action: Literal["accept", "edit", "reject"]
+    steps: Optional[List[str]] = None
+    comment: Optional[str] = None
+    actor: str = "engineer"
+    retry: bool = False
+
+
+class FeedbackResponse(BaseModel):
+    incident_id: str
+    status: Literal["executing", "investigating", "rejected"]
+
+
+class ResolveRequest(BaseModel):
+    outcome: Literal["worked", "failed", "partial"] = "worked"
+    resolution: Optional[str] = None
+    actor: Optional[str] = None
 
 
 class Stats(BaseModel):

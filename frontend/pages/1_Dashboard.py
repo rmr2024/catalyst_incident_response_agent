@@ -30,3 +30,24 @@ with st.expander("🔌 Connection & Data Contract Status", expanded=True):
     st.write("**Backend Live Status:**", "Connected" if api_client.is_backend_live else "Mock Fallback Active")
     st.write(f"**Aggregated Stats:** Total: {stats.get('total', 0)}, Active: {stats.get('active', 0)}")
     st.write(f"**Incidents Loaded:** {len(incidents)} items ready")
+
+st.markdown("---")
+st.subheader("Open an incident War Room")
+war_room_incidents = api_client.list_incidents(limit=50)
+if war_room_incidents:
+    incident_by_id = {item["id"]: item for item in war_room_incidents if item.get("id")}
+    incident_ids = list(incident_by_id)
+    selected_id = st.selectbox(
+        "Select incident",
+        options=incident_ids,
+        format_func=lambda incident_id: (
+            f"{incident_id} · {incident_by_id[incident_id].get('service', 'unknown service')} · "
+            f"{incident_by_id[incident_id].get('status', 'unknown')}"
+        ),
+        key="dashboard_war_room_incident",
+    )
+    if st.button("Open War Room", type="primary", key="dashboard_open_war_room"):
+        st.session_state["war_room_incident_id"] = selected_id
+        st.switch_page("pages/3_WarRoom.py")
+else:
+    st.info("No incidents are available to open.")

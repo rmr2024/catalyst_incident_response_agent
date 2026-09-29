@@ -132,6 +132,72 @@ class APIClient:
                 }
         return None
 
+    def get_similar_incidents(self, incident_id: str) -> List[Dict[str, Any]]:
+        """Fetch similar historical incidents from GET /incidents/{id}/similar."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                res = client.get(f"{self.base_url}/incidents/{incident_id}/similar")
+                if res.status_code == 200:
+                    self._is_live = True
+                    return res.json()
+        except Exception as e:
+            self._last_error = str(e)
+            self._is_live = False
+
+        incident = self.get_incident(incident_id) or {}
+        recommendation = incident.get("recommendation") or {}
+        return recommendation.get("similar") or []
+
+    def get_incident_events(self, incident_id: str, after: int = 0) -> List[Dict[str, Any]]:
+        """Fetch incident events after the given event offset."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                res = client.get(
+                    f"{self.base_url}/incidents/{incident_id}/events",
+                    params={"after": after},
+                )
+                if res.status_code == 200:
+                    self._is_live = True
+                    return res.json()
+        except Exception as e:
+            self._last_error = str(e)
+            self._is_live = False
+
+        incident = self.get_incident(incident_id) or {}
+        return (incident.get("events") or [])[after:]
+
+    def submit_feedback(self, incident_id: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Submit accept/edit/reject feedback to POST /incidents/{id}/feedback."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                res = client.post(f"{self.base_url}/incidents/{incident_id}/feedback", json=payload)
+                if res.status_code == 200:
+                    self._is_live = True
+                    self._last_error = None
+                    return res.json()
+                self._last_error = f"Feedback request failed ({res.status_code}): {res.text}"
+                self._is_live = True
+        except Exception as e:
+            self._last_error = str(e)
+            self._is_live = False
+        return None
+
+    def resolve_incident(self, incident_id: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Resolve an incident via POST /incidents/{id}/resolve."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                res = client.post(f"{self.base_url}/incidents/{incident_id}/resolve", json=payload)
+                if res.status_code == 200:
+                    self._is_live = True
+                    self._last_error = None
+                    return res.json()
+                self._last_error = f"Resolve request failed ({res.status_code}): {res.text}"
+                self._is_live = True
+        except Exception as e:
+            self._last_error = str(e)
+            self._is_live = False
+        return None
+
     def get_timeline(self, incident_id: str) -> List[Dict[str, Any]]:
         """Fetch unified timeline from GET /incidents/{incident_id}/timeline."""
         try:

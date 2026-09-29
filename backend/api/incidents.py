@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException
 
+from core.intake import load_recommendation
 from db import crud
 from db.crud import as_utc
 from db.models import IncidentDetail, IncidentSummary
-from schemas import AgentEvent
+from schemas import AgentEvent, Alert, MemoryHit
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
@@ -47,3 +48,25 @@ def timeline(incident_id: str):
 def memory_calls(incident_id: str):
     _get(incident_id)
     return [e for e in crud.list_events(incident_id) if e.kind == "memory"]
+
+
+@router.get("/{incident_id}/similar", response_model=list[MemoryHit])
+def similar(incident_id: str):
+    """Return similar historical incidents recalled from memory for this incident."""
+    return load_recommendation(_get(incident_id)).get("similar") or []
+
+
+@router.post("/{incident_id}/investigate")
+async def investigate(incident_id: str):
+    """Re-trigger the AI investigation for an incident that is not currently active."""
+    from core.bus import make_emitter, set_status  # noqa: PLC0415
+    from core.intake import rebuild_actions, run_investigation, spawn  # noqa: PLC0415
+
+    inc = _get(incident_id)
+    if inc.status in ("investigating", "executing"):
+        raise HTTPException(409, f"cannot investigate while status is {inc.status}")
+    crud.delete_actions(incident_id)
+    set_status(incident_id, "investigating")
+    await make_emitter(incident_id)("agent", "re-investigate", "investigation restarted on request")
+    spawn(run_investigation(incident_id, Alert.model_validate_json(inc.alert_json)))
+    return {"incident_id": incident_id, "status": "investigating"}

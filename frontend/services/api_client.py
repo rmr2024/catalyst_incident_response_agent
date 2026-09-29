@@ -922,20 +922,15 @@ class ApiClient:
             "status": "draft",
         }
 
-    def approve_postmortem(self, incident_id: str, postmortem: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def approve_postmortem(self, incident_id: str, draft: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Approve post-mortem and retain to memory (POST /incidents/{id}/postmortem/approve).
 
-        Args:
-            incident_id: The incident to approve the postmortem for.
-            postmortem:  The draft dict returned by draft_postmortem(). Required by the
-                         backend to retain the correct content to Hindsight memory.
+        The backend endpoint requires a PostmortemApproveIn body: {postmortem: dict, actor: str}.
+        The draft dict is the value returned by draft_postmortem().
         """
         if not self.force_mocks and self.is_backend_live:
             try:
-                body = {
-                    "postmortem": postmortem or {"incident_id": incident_id},
-                    "actor": "engineer",
-                }
+                body = {"postmortem": draft or {"incident_id": incident_id}, "actor": "engineer"}
                 with httpx.Client(timeout=15.0) as client:
                     res = client.post(
                         f"{self.base_url}/incidents/{incident_id}/postmortem/approve",
@@ -946,6 +941,7 @@ class ApiClient:
                         data = res.json()
                         if isinstance(data, dict):
                             return data
+                    self._last_error = f"Approve failed ({res.status_code}): {res.text[:200]}"
             except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
                 self._last_error = str(e)
                 self._is_live = False

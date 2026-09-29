@@ -241,7 +241,7 @@ def render_postmortem():
             use_container_width=True,
         ):
             with st.spinner("Retaining post-mortem to Hindsight memory…"):
-                result = api_client.approve_postmortem(incident_id, draft)
+                result = api_client.approve_postmortem(incident_id, draft=draft)
             if result.get("retained") or result.get("status") == "approved":
                 st.session_state[approved_key] = True
                 st.session_state.pop(draft_key, None)

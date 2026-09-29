@@ -91,6 +91,7 @@ class ApiClient:
         self.timeout = timeout
         self._last_error: Optional[str] = None
         self._is_live: Optional[bool] = None
+        self._mock_memory_enabled: bool = True
 
     def check_health(self) -> Dict[str, Any]:
         """Check if FastAPI backend is healthy and responding."""
@@ -99,7 +100,7 @@ class ApiClient:
             return {"ok": False, "memory": True, "mode": "forced_mock"}
 
         try:
-            with httpx.Client(timeout=1.5) as client:
+            with httpx.Client(timeout=httpx.Timeout(1.0, connect=0.5)) as client:
                 res = client.get(f"{self.base_url}{API_ENDPOINTS['HEALTH']}")
                 if res.status_code == 200:
                     self._is_live = True
@@ -393,15 +394,18 @@ class ApiClient:
                     res = client.get(f"{self.base_url}{API_ENDPOINTS['SETTINGS_MEMORY']}")
                     if res.status_code == 200:
                         self._is_live = True
-                        return bool(res.json().get("enabled", True))
+                        val = bool(res.json().get("enabled", True))
+                        self._mock_memory_enabled = val
+                        return val
             except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
                 self._last_error = str(e)
                 self._is_live = False
 
-        return True
+        return getattr(self, "_mock_memory_enabled", True)
 
     def set_memory_status(self, enabled: bool) -> bool:
         """Update Hindsight memory toggle status (POST /settings/memory)."""
+        self._mock_memory_enabled = enabled
         if not self.force_mocks and self.is_backend_live:
             try:
                 with httpx.Client(timeout=5.0) as client:
@@ -411,12 +415,14 @@ class ApiClient:
                     )
                     if res.status_code == 200:
                         self._is_live = True
-                        return bool(res.json().get("enabled", enabled))
+                        val = bool(res.json().get("enabled", enabled))
+                        self._mock_memory_enabled = val
+                        return val
             except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError, Exception) as e:
                 self._last_error = str(e)
                 self._is_live = False
 
-        return enabled
+        return self._mock_memory_enabled
 
     def get_memory_state(self) -> MemoryState:
         """Return typed MemoryState model."""

@@ -28,7 +28,7 @@ try:
     from models import Incident, Recommendation, SimilarIncident, SimulationResponse, SimulationScenario
 except ImportError:
     from types import Incident, Recommendation, SimilarIncident, SimulationResponse, SimulationScenario
-from utils.helpers import format_timestamp, get_severity_color, get_status_color
+from utils.helpers import format_timestamp, get_severity_color, get_status_color, navigate_to
 
 
 def _get_severity_indicator(severity: str) -> str:
@@ -87,13 +87,21 @@ def render_simulator():
         if current_idx >= len(scenarios):
             current_idx = 0
 
+        def _format_scenario(val) -> str:
+            try:
+                i = int(val)
+                return f"{i+1}. {scenario_names[i]} ({scenarios[i].service})"
+            except Exception:
+                return str(val)
+
         selected_idx = st.selectbox(
             "Available Pre-configured Scenarios",
-            range(len(scenarios)),
+            list(range(len(scenarios))),
             index=current_idx,
-            format_func=lambda i: f"{i+1}. {scenario_names[i]} ({scenarios[i].service})",
+            format_func=_format_scenario,
             key="sim_scenario_dropdown",
         )
+        selected_idx = int(selected_idx)
         st.session_state["selected_scenario_index"] = selected_idx
         selected_scenario: SimulationScenario = scenarios[selected_idx]
         st.session_state["selected_scenario"] = selected_scenario
@@ -167,7 +175,7 @@ def render_simulator():
     # ---------------------------------------------------------
     # Action Controls: Run Simulation & Reset
     # ---------------------------------------------------------
-    act_col1, act_col2, _ = st.columns([1.5, 1.2, 2.5])
+    act_col1, act_col2, act_col3, _ = st.columns([1.5, 1.3, 1.2, 1.8])
 
     with act_col1:
         run_clicked = st.button(
@@ -184,6 +192,10 @@ def render_simulator():
             use_container_width=True,
             help="Reset simulation state, scenario selection, and clear results",
         )
+
+    with act_col3:
+        if st.button("📊 Dashboard ←", use_container_width=True, help="Switch back to Incident Operations Dashboard"):
+            navigate_to("Dashboard")
 
     # Handle Reset Simulation
     if reset_clicked:
@@ -379,8 +391,7 @@ def render_simulator():
         with nav_col1:
             if st.button("Enter War Room for Simulated Incident 🚨", type="primary", use_container_width=True):
                 st.session_state["current_incident"] = inc
-                st.session_state["selected_page"] = "War Room"
-                st.rerun()
+                navigate_to("War Room")
 
 
 if __name__ == "__main__":

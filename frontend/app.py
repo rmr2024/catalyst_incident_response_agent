@@ -1,15 +1,24 @@
 """
 Incident Response Agent - Main Console Shell.
 Streamlit application root coordinating sidebar navigation, session state, and page dispatching.
+Provides seamless navigation between:
+1. Dashboard (Fully functional)
+2. Simulator (Fully functional)
+3. War Room (Coming Soon)
+4. Post-Mortem (Coming Soon)
+5. Analytics (Coming Soon)
+Preserves memory_enabled, selected scenario, current incident, and simulation result in session_state.
 """
 
 import sys
 from pathlib import Path
+from typing import Optional
 import streamlit as st
 
 # Ensure frontend root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+# Initialize domain models & ensure types registration
 import models
 import types
 for _attr in dir(models):
@@ -20,7 +29,7 @@ from api_client import api_client
 from components.badges import render_memory_badge, render_severity_badge, render_status_badge, render_system_status_pill
 from pages.dashboard import render_dashboard
 from pages.simulator import render_simulator
-from models import Incident
+from models import Incident, SimulationScenario
 
 # 1. Page Configuration
 st.set_page_config(
@@ -29,6 +38,10 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# Handle pending programmatic navigation before widget creation
+if "_nav_destination" in st.session_state and st.session_state["_nav_destination"]:
+    st.session_state["selected_page"] = st.session_state.pop("_nav_destination")
 
 # 2. Initialize Session State
 if "selected_page" not in st.session_state:
@@ -59,19 +72,14 @@ with st.sidebar:
 
     # Navigation Menu
     nav_options = ["Dashboard", "Simulator", "War Room", "Post-Mortem", "Analytics"]
-    current_page = st.session_state.get("selected_page", "Dashboard")
-    current_index = nav_options.index(current_page) if current_page in nav_options else 0
+    if st.session_state.get("selected_page") not in nav_options:
+        st.session_state["selected_page"] = "Dashboard"
 
-    selected = st.radio(
+    st.radio(
         "Navigation",
         options=nav_options,
-        index=current_index,
-        key="sidebar_navigation_radio",
+        key="selected_page",
     )
-
-    if selected != st.session_state["selected_page"]:
-        st.session_state["selected_page"] = selected
-        st.rerun()
 
     st.markdown("---")
 
@@ -84,7 +92,13 @@ with st.sidebar:
     st.write("")
 
     # Memory ON/OFF Toggle
-    mem_enabled = st.session_state["memory_enabled"]
+    mem_enabled = st.session_state.get("memory_enabled", True)
+    if (
+        "sidebar_memory_toggle" in st.session_state
+        and st.session_state["sidebar_memory_toggle"] != mem_enabled
+    ):
+        st.session_state["sidebar_memory_toggle"] = mem_enabled
+
     new_mem = st.toggle(
         "🧠 Hindsight Memory",
         value=mem_enabled,
@@ -94,17 +108,19 @@ with st.sidebar:
 
     if new_mem != mem_enabled:
         st.session_state["memory_enabled"] = new_mem
-        api_client.toggle_memory(new_mem)
+        if "sim_memory_toggle" in st.session_state:
+            st.session_state["sim_memory_toggle"] = new_mem
+        api_client.set_memory_status(new_mem)
         st.toast(f"Hindsight memory {'enabled' if new_mem else 'disabled'}")
         st.rerun()
 
     st.markdown(render_memory_badge(new_mem), unsafe_allow_html=True)
 
     # Active Incident Quick Badge in Sidebar
-    active_inc: Incident = st.session_state.get("current_incident")
+    active_inc: Optional[Incident] = st.session_state.get("current_incident")
     if active_inc:
         st.markdown("---")
-        st.markdown("#### Active Target")
+        st.markdown("#### Active Incident Target")
         st.caption(f"**{active_inc.id}** — `{active_inc.service}`")
         st.markdown(
             f"{render_severity_badge(active_inc.severity)} &nbsp; {render_status_badge(active_inc.status)}",
@@ -122,25 +138,26 @@ elif page == "Simulator":
 
 elif page == "War Room":
     st.markdown("## 🚨 Incident War Room")
-    st.caption("Deep-dive investigation, hypothesis ranking, and human approval *(Owned by P5)*")
-    st.info("🚧 **War Room Domain (P5 Ownership)**: Investigation telemetry, live action runner, and approval controls are managed by P5.")
+    st.caption("Deep-dive investigation, hypothesis ranking, and human-in-the-loop approval actions *(Owned by P5)*")
+    st.info("🚧 **Coming Soon**: The Incident War Room provides real-time collaborative triage, hypothesis verification, and live runbook execution *(Under development by team member P5)*.")
 
-    active_inc: Incident = st.session_state.get("current_incident")
+    active_inc: Optional[Incident] = st.session_state.get("current_incident")
     if active_inc:
-        st.markdown(f"### Investigating: {active_inc.id} ({active_inc.service})")
-        st.markdown(f"**Symptoms:** {active_inc.symptoms}")
-        if active_inc.recommendation:
-            st.markdown(f"**Top Hypothesis:** `{active_inc.recommendation.hypothesis}`")
-            st.markdown(f"**Recommended Runbook:** `{active_inc.recommendation.runbook}`")
-    else:
-        st.write("No incident currently selected. Select an incident from the [Dashboard](#) to inspect.")
+        with st.container():
+            st.markdown(f"### Target Incident: {active_inc.id} ({active_inc.service})")
+            st.markdown(f"**Symptoms:** {active_inc.symptoms}")
+            if active_inc.root_cause:
+                st.markdown(f"**Identified Root Cause:** `{active_inc.root_cause}`")
+            if active_inc.recommendation:
+                st.markdown(f"**Top Hypothesis:** `{active_inc.recommendation.hypothesis}`")
+                st.markdown(f"**Recommended Runbook:** `{active_inc.recommendation.runbook}`")
 
 elif page == "Post-Mortem":
     st.markdown("## 📝 Incident Post-Mortem")
     st.caption("Automated post-incident root cause analysis & Hindsight retention *(Owned by P6)*")
-    st.info("🚧 **Post-Mortem Domain (P6 Ownership)**: Post-mortem drafting, incident timeline synthesis, and Hindsight knowledge retention loop are managed by P6.")
+    st.info("🚧 **Coming Soon**: The Post-Mortem studio automatically generates incident post-mortems, root cause summaries, and Hindsight knowledge retention loops *(Under development by team member P6)*.")
 
 elif page == "Analytics":
     st.markdown("## 📈 Incident Analytics")
     st.caption("MTTR benchmarks, memory-enabled vs disabled impact, and recurring service trends *(Owned by P6)*")
-    st.info("🚧 **Analytics Domain (P6 Ownership)**: Long-term operational KPIs, MTTR trends, and memory efficacy metrics are managed by P6.")
+    st.info("🚧 **Coming Soon**: Advanced operational KPIs, MTTR benchmarks (Memory ON vs Memory OFF), and cross-service reliability analytics are under development by team member P6.")

@@ -32,6 +32,7 @@ from utils.helpers import (
     format_timestamp,
     get_severity_color,
     get_status_color,
+    navigate_to,
 )
 
 
@@ -92,7 +93,7 @@ def render_dashboard():
     # ---------------------------------------------------------
     # 3. Controls & Trigger Demo Alert Bar
     # ---------------------------------------------------------
-    btn_col1, btn_col2, filter_col1, filter_col2 = st.columns([1.5, 1, 1.2, 1.2])
+    btn_col1, btn_col2, btn_col3, filter_col1, filter_col2 = st.columns([1.5, 1, 1.2, 1.1, 1.1])
 
     with btn_col1:
         # 3. Prominent Trigger Demo Alert Button
@@ -110,6 +111,11 @@ def render_dashboard():
             use_container_width=True,
             help="Re-fetch latest telemetry, incidents, and KPI metrics",
         )
+
+    with btn_col3:
+        # Navigation to Simulator
+        if st.button("🧪 Simulator →", use_container_width=True, help="Switch to Safe Outage Simulation Sandbox"):
+            navigate_to("Simulator")
 
     with filter_col1:
         sev_filter = st.selectbox(
@@ -368,8 +374,7 @@ def render_dashboard():
                         with btn_inspect_col2:
                             if st.button(f"Enter War Room 🚨", key=f"war_{inc.id}"):
                                 st.session_state["current_incident"] = inc
-                                st.session_state["selected_page"] = "War Room"
-                                st.rerun()
+                                navigate_to("War Room")
 
     st.markdown("---")
 

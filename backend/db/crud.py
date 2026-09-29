@@ -146,12 +146,20 @@ def _avg(xs):
     return round(sum(xs) / len(xs), 1) if xs else None
 
 
-def stats() -> dict:
+def _distribution(values) -> dict[str, int]:
+    counts = Counter(
+        str(value) for value in values
+        if value is not None and (not isinstance(value, str) or value.strip())
+    )
+    return dict(sorted(counts.items()))
+
+
+def stats(include_analytics: bool = False) -> dict:
     with get_session() as s:
         incs = list(s.exec(select(Incident)).all())
     resolved = [i for i in incs if i.status == "resolved"]
     verdicts = [i.suggestion_verdict for i in incs if i.suggestion_verdict]
-    return {
+    result = {
         "total": len(incs),
         "active": sum(1 for i in incs if i.status not in TERMINAL),
         "resolved": len(resolved),
@@ -163,6 +171,25 @@ def stats() -> dict:
         "novel_count": sum(1 for i in incs if i.is_novel),
         "acceptance_rate": round(sum(1 for v in verdicts if v == "accepted") / len(verdicts), 3) if verdicts else None,
     }
+    if include_analytics:
+        ttr_values = [i.ttr_seconds for i in incs if i.ttr_seconds is not None]
+        result.update({
+            "by_memory_used": _distribution(
+                "enabled" if i.memory_used is True else
+                "disabled" if i.memory_used is False else "unknown"
+                for i in incs
+            ),
+            "ttr_seconds": {
+                "count": len(ttr_values),
+                "average": _avg(ttr_values),
+                "min": round(min(ttr_values), 1) if ttr_values else None,
+                "max": round(max(ttr_values), 1) if ttr_values else None,
+            },
+            "by_suggestion_verdict": _distribution(i.suggestion_verdict for i in incs),
+            "by_outcome": _distribution(i.outcome for i in incs),
+            "by_top_hypothesis": _distribution(i.top_hypothesis for i in incs),
+        })
+    return result
 
 
 def reset_all() -> None:

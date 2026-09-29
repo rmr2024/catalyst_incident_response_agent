@@ -18,12 +18,10 @@ async def _drain(request: Request, q: asyncio.Queue):
 
 
 @router.get("/incidents/{incident_id}/events")
-async def incident_events(incident_id: str, request: Request, stream: bool | None = None, after: int = 0):
+async def incident_events(incident_id: str, request: Request):
     inc = crud.get_incident(incident_id)
     if not inc:
         raise HTTPException(404, "incident not found")
-    if stream is False or (stream is None and "text/event-stream" not in request.headers.get("accept", "")):
-        return crud.list_events(incident_id)[after:]
 
     async def gen():
         q = bus.subscribe(incident_id)

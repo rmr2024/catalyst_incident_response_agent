@@ -23,7 +23,6 @@ def build_memory_record(incident_id: str, outcome: str, note: str | None = None)
         "symptoms": {"message": inc.message, "metrics": metrics},
         "root_cause": inc.top_hypothesis,
         "fix_steps": [{"step": a.step, "status": a.status} for a in crud.list_actions(incident_id)],
-        "resolution": inc.resolution,
         "runbook": rec.get("runbook"),
         "outcome": outcome,
         "lessons": [note] if note else [],

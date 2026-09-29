@@ -1,15 +1,11 @@
-from pathlib import Path
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-BACKEND_DIR = Path(__file__).resolve().parent
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=(BACKEND_DIR.parent / ".env", BACKEND_DIR / ".env"), extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = f"sqlite:///{(BACKEND_DIR / 'incidents.db').as_posix()}"
-    cors_origins: str = "http://localhost:8501"
+    database_url: str = "sqlite:///./incidents.db"
+    cors_origins: str = "http://localhost:5173"
     memory_enabled: bool = True
     critical_services: str = "payments,checkout,auth,api-gateway"
     llm_provider: str = "claude"
@@ -19,6 +15,7 @@ class Settings(BaseSettings):
     hindsight_url: str = "http://localhost:8888"
     hindsight_api_key: str = ""
     hindsight_bank: str = "incidents"
+    novel_threshold: float = 0.25  # similarity threshold below which an incident is flagged as novel
 
     @property
     def cors_list(self) -> list[str]:

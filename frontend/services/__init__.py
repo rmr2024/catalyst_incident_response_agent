@@ -1,9 +1,4 @@
-"""
-Re-export centralized ApiClient and functions from services.api_client.
-Ensures full compatibility for both `from api_client import ...` and `from services.api_client import ...`.
-"""
-
-from services.api_client import (
+from .api_client import (
     API_ENDPOINTS,
     ApiClient,
     api_client,

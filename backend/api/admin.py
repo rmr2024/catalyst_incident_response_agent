@@ -28,6 +28,7 @@ def post_memory(body: MemoryToggle):
 
 
 @router.post("/reset")
+@router.post("/memory/reset")
 def reset():
     crud.reset_all()
     set_memory_enabled(True)

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from copy import deepcopy
 from typing import Any
@@ -159,18 +160,67 @@ def _keyword_score(query: str, record: dict) -> float:
 # Hindsight client helpers
 # ---------------------------------------------------------------------------
 
+_clients: dict[tuple[str, str | None], Any] = {}
+_ensured_banks: set[tuple[str, str]] = set()
+
+_BANK_MISSION = (
+    "Long-term incident memory. Stores incident IDs, affected services, symptoms, "
+    "root causes, fixes that worked or failed, runbooks and lessons learned."
+)
+_INCIDENT_ID_RE = re.compile(r"INC-[A-Za-z0-9-]+")
+
+
 def _get_hindsight_client():
-    """Attempt to return a configured Hindsight client.  Returns None on failure."""
+    """Return a cached Hindsight client for the configured URL/key.  Returns None on failure."""
+    url = (settings.hindsight_url or "").strip()
+    if not url:
+        return None
+    key = settings.hindsight_api_key or None
     try:
-        import hindsight  # type: ignore
-        client = hindsight.Client(
-            base_url=settings.hindsight_url,
-            api_key=settings.hindsight_api_key or None,
-        )
+        client = _clients.get((url, key))
+        if client is None:
+            from hindsight_client import Hindsight  # type: ignore
+            client = Hindsight(base_url=url, api_key=key, timeout=120)
+            _clients[(url, key)] = client
         return client
     except Exception as e:
         log.debug("Hindsight client unavailable: %s", e)
         return None
+
+
+async def _ensure_bank(client) -> None:
+    """Create the configured memory bank once per process.  Errors are ignored (bank may exist)."""
+    bank_key = (settings.hindsight_url, settings.hindsight_bank)
+    if bank_key in _ensured_banks:
+        return
+    _ensured_banks.add(bank_key)
+    try:
+        await client.acreate_bank(settings.hindsight_bank, name="Incident memory", mission=_BANK_MISSION)
+    except Exception as e:
+        log.debug("acreate_bank(%s) ignored: %s", settings.hindsight_bank, e)
+
+
+def _hit_incident_id(r) -> str:
+    meta = getattr(r, "metadata", None) or {}
+    if meta.get("incident_id"):
+        return str(meta["incident_id"])
+    doc_id = getattr(r, "document_id", None) or ""
+    if doc_id:
+        return doc_id.removesuffix("-postmortem")
+    m = _INCIDENT_ID_RE.search(getattr(r, "text", None) or "")
+    return m.group(0) if m else ""
+
+
+def _hit_score(r) -> float:
+    scores = getattr(r, "scores", None)
+    for name in ("semantic", "reranker", "final"):
+        v = getattr(scores, name, None) if scores is not None else None
+        if v is not None:
+            try:
+                return max(0.0, min(1.0, float(v)))
+            except (TypeError, ValueError):
+                continue
+    return 0.0
 
 
 def _hindsight_available() -> bool:
@@ -179,9 +229,7 @@ def _hindsight_available() -> bool:
     if client is None:
         return False
     try:
-        # Try a lightweight ping if the client supports it
-        if hasattr(client, "ping"):
-            client.ping()
+        client.get_version()
         return True
     except Exception:
         return False
@@ -208,22 +256,21 @@ async def recall(query: str, top_k: int = 5) -> list[dict]:
     client = _get_hindsight_client()
     if client is not None:
         try:
-            results = client.recall(
-                bank=settings.hindsight_bank,
+            await _ensure_bank(client)
+            response = await client.arecall(
+                bank_id=settings.hindsight_bank,
                 query=query,
-                top_k=top_k,
+                max_tokens=2048,
             )
             hits = []
-            for r in (results or []):
-                meta = r.get("metadata") or {}
+            for r in (getattr(response, "results", None) or []):
+                meta = getattr(r, "metadata", None) or {}
                 hits.append({
-                    "id": str(r.get("id") or r.get("memory_id") or ""),
-                    "text": str(r.get("text") or r.get("content") or ""),
-                    "incident_id": str(
-                        meta.get("incident_id") or r.get("incident_id") or ""
-                    ),
-                    "score": float(r.get("score") or r.get("similarity") or 0.0),
-                    "outcome": str(meta.get("outcome") or r.get("outcome") or ""),
+                    "id": str(getattr(r, "id", "") or ""),
+                    "text": str(getattr(r, "text", "") or ""),
+                    "incident_id": _hit_incident_id(r),
+                    "score": _hit_score(r),
+                    "outcome": str(meta.get("outcome", "")),
                     "_source": "hindsight",
                 })
             log.info("recall(%r) -> %d Hindsight hits", query, len(hits))
@@ -302,14 +349,17 @@ async def retain_incident(record: dict) -> str:
     client = _get_hindsight_client()
     if client is not None:
         try:
-            result = client.remember(
-                bank=settings.hindsight_bank,
-                text=text,
-                metadata=metadata,
+            await _ensure_bank(client)
+            await client.aretain(
+                bank_id=settings.hindsight_bank,
+                content=text,
+                context="incident record",
+                document_id=incident_id or None,
+                metadata={k: str(v) for k, v in metadata.items()},
+                tags=[f"service:{service}", f"outcome:{outcome}"],
             )
-            mem_id = getattr(result, "id", None) or (result.get("id") if isinstance(result, dict) else None) or "?"
-            log.info("retain_incident(%s) stored in Hindsight, id=%s", incident_id, mem_id)
-            return f"stored in Hindsight: id={mem_id}"
+            log.info("retain_incident(%s) stored in Hindsight", incident_id)
+            return f"stored in Hindsight: id={incident_id}"
         except Exception as e:
             log.warning("Hindsight retain failed, using mock fallback: %s", e)
 
@@ -401,14 +451,17 @@ async def retain_postmortem(record: dict) -> str:
     client = _get_hindsight_client()
     if client is not None:
         try:
-            result = client.remember(
-                bank=settings.hindsight_bank,
-                text=text,
-                metadata=metadata,
+            await _ensure_bank(client)
+            await client.aretain(
+                bank_id=settings.hindsight_bank,
+                content=text,
+                context="approved postmortem",
+                document_id=f"{incident_id}-postmortem",
+                metadata={k: str(v) for k, v in metadata.items()},
+                tags=["type:postmortem"],
             )
-            mem_id = getattr(result, "id", None) or (result.get("id") if isinstance(result, dict) else None) or "?"
-            log.info("retain_postmortem(%s) stored in Hindsight, id=%s", incident_id, mem_id)
-            return f"postmortem stored in Hindsight: id={mem_id}"
+            log.info("retain_postmortem(%s) stored in Hindsight", incident_id)
+            return f"postmortem stored in Hindsight: id={incident_id}-postmortem"
         except Exception as e:
             log.warning("Hindsight retain_postmortem failed, using mock fallback: %s", e)
 
@@ -425,6 +478,19 @@ async def retain_postmortem(record: dict) -> str:
     _mock_postmortems.append(entry)
     log.info("retain_postmortem(%s) stored in mock store", incident_id)
     return f"postmortem stored in mock store: incident_id={incident_id}"
+
+
+async def reset_memory() -> None:
+    """Delete the configured Hindsight bank (errors ignored) and recreate it."""
+    client = _get_hindsight_client()
+    if client is None:
+        return
+    try:
+        await client.adelete_bank(settings.hindsight_bank)
+    except Exception as e:
+        log.debug("adelete_bank(%s) ignored: %s", settings.hindsight_bank, e)
+    _ensured_banks.discard((settings.hindsight_url, settings.hindsight_bank))
+    await _ensure_bank(client)
 
 
 async def reflect(incident_id: str, context: dict | None = None) -> str:

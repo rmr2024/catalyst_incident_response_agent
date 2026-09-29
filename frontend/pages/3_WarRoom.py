@@ -12,7 +12,7 @@ sys.path.insert(0, str(FRONTEND_ROOT))
 
 from api_client import api_client
 from components.header import render_header
-from frontend.types import AgentEvent, FeedbackRequest, IncidentDetail, MemoryHit, ResolveRequest
+from models import AgentEvent, FeedbackRequest, IncidentDetail, MemoryHit, ResolveRequest
 
 st.set_page_config(page_title="War Room", page_icon="🚨", layout="wide")
 

@@ -8,3 +8,5 @@ python-dotenv
 anthropic
 groq
 hindsight-client
+pytest
+pytest-asyncio

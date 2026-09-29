@@ -1,30 +1,90 @@
 """
-API Client for Incident Response Agent frontend.
-Communicates with the FastAPI backend at http://localhost:8000 with automatic fallback to mock data.
+Centralized API Client for Incident Response Agent (Pure Python / Streamlit)
+Interacts with the FastAPI backend or falls back to mock fixtures when USE_MOCKS is enabled or backend is unreachable.
+
+Supported operations:
+- triggering a demo alert
+- fetching incidents
+- fetching a single incident
+- triggering a simulation
+- resetting simulation
+- memory ON/OFF state
 """
 
 import os
 from typing import Any, Dict, List, Optional
 import httpx
 
-from mocks.mock_data import MOCK_INCIDENTS, MOCK_MEMORY_CALLS, MOCK_SCENARIOS, MOCK_STATS
+from mocks.mock_data import (
+    MOCK_ACTIVE_INCIDENT,
+    MOCK_DEMO_ALERT,
+    MOCK_INCIDENTS,
+    MOCK_SIMULATION_SCENARIOS,
+    MOCK_STATS,
+    MOCK_TIMELINE_EVENTS,
+)
+from types import (
+    Alert,
+    Incident,
+    IncidentStats,
+    MemoryState,
+    SimulationResponse,
+    SimulationScenario,
+    TimelineEvent,
+)
+
+# Centralized API Endpoints
+API_ENDPOINTS = {
+    "HEALTH": "/health",
+    "ALERTS": "/alerts",
+    "ALERT_DEMO": "/alerts/demo",
+    "INCIDENTS": "/incidents",
+    "INCIDENT_BY_ID": lambda id: f"/incidents/{id}",
+    "INCIDENT_STATS": "/incidents/stats",
+    "INCIDENT_TIMELINE": lambda id: f"/incidents/{id}/timeline",
+    "INCIDENT_SIMULATE": lambda id: f"/incidents/{id}/simulate",
+    "RESET_SIMULATION": "/reset",
+    "SETTINGS_MEMORY": "/settings/memory",
+}
 
 
-DEFAULT_API_BASE_URL = os.environ.get("VITE_API_BASE_URL", "http://localhost:8000").rstrip("/")
+def get_base_url() -> str:
+    """Resolve backend API base URL from environment variables or default to localhost:8000."""
+    return (
+        os.environ.get("API_URL")
+        or os.environ.get("VITE_API_URL")
+        or os.environ.get("BACKEND_URL")
+        or "http://localhost:8000"
+    ).rstrip("/")
 
 
-class APIClient:
-    def __init__(self, base_url: str = DEFAULT_API_BASE_URL, timeout: float = 8.0):
-        self.base_url = base_url
+def is_mock_mode_forced() -> bool:
+    """Check if mock mode is forced via environment variable USE_MOCKS."""
+    val = (os.environ.get("USE_MOCKS") or os.environ.get("VITE_USE_MOCKS") or "").lower()
+    return val in ("true", "1", "yes")
+
+
+class ApiClient:
+    """
+    Centralized HTTP client for Incident Response Agent operations.
+    Thread-safe and compatible with Streamlit execution loops.
+    """
+
+    def __init__(self, base_url: Optional[str] = None, force_mocks: Optional[bool] = None, timeout: float = 8.0):
+        self.base_url = (base_url or get_base_url()).rstrip("/")
+        self.force_mocks = force_mocks if force_mocks is not None else is_mock_mode_forced()
         self.timeout = timeout
         self._last_error: Optional[str] = None
         self._is_live: Optional[bool] = None
 
     def check_health(self) -> Dict[str, Any]:
         """Check if FastAPI backend is healthy and responding."""
+        if self.force_mocks:
+            return {"ok": False, "memory": True, "mode": "forced_mock"}
+
         try:
             with httpx.Client(timeout=3.0) as client:
-                res = client.get(f"{self.base_url}/health")
+                res = client.get(f"{self.base_url}{API_ENDPOINTS['HEALTH']}")
                 if res.status_code == 200:
                     self._is_live = True
                     self._last_error = None
@@ -40,189 +100,271 @@ class APIClient:
             self.check_health()
         return bool(self._is_live)
 
-    def list_incidents(
+    # 1. Trigger a demo alert
+    def trigger_demo_alert(self) -> Alert:
+        """Trigger predefined demo alert (POST /alerts/demo) or return mock alert."""
+        if self.force_mocks:
+            return Alert.model_validate(MOCK_DEMO_ALERT)
+
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                res = client.post(f"{self.base_url}{API_ENDPOINTS['ALERT_DEMO']}")
+                if res.status_code in (200, 201):
+                    self._is_live = True
+                    data = res.json()
+                    return Alert(
+                        id=data.get("incident_id") or data.get("id") or "ALT-LIVE",
+                        service=data.get("service", "payments-db"),
+                        error_rate=data.get("metrics", {}).get("error_rate", 0.14),
+                        affected_users=data.get("metrics", {}).get("affected_users", 4800),
+                        impact="Critical payment authorization degradation",
+                        timestamp=data.get("timestamp", "2026-09-29T11:30:00Z"),
+                        message=data.get("message", "connection pool exhausted"),
+                        severity=data.get("severity", "P1"),
+                        metrics=data.get("metrics", {}),
+                    )
+        except Exception as e:
+            self._last_error = str(e)
+            self._is_live = False
+
+        return Alert.model_validate(MOCK_DEMO_ALERT)
+
+    # 2. Fetch incidents list
+    def get_incidents(
         self,
         status: Optional[str] = None,
         service: Optional[str] = None,
         severity: Optional[str] = None,
         active: Optional[bool] = None,
         limit: int = 50,
-    ) -> List[Dict[str, Any]]:
-        """Fetch list of incident summaries from GET /incidents."""
-        params: Dict[str, Any] = {"limit": limit}
-        if status:
-            params["status"] = status
-        if service:
-            params["service"] = service
-        if severity:
-            params["severity"] = severity
-        if active is not None:
-            params["active"] = str(active).lower()
+    ) -> List[Incident]:
+        """Fetch list of incidents (GET /incidents) with optional filtering."""
+        if not self.force_mocks:
+            try:
+                params: Dict[str, Any] = {"limit": limit}
+                if status:
+                    params["status"] = status
+                if service:
+                    params["service"] = service
+                if severity:
+                    params["severity"] = severity
+                if active is not None:
+                    params["active"] = str(active).lower()
 
-        try:
-            with httpx.Client(timeout=self.timeout) as client:
-                res = client.get(f"{self.base_url}/incidents", params=params)
-                if res.status_code == 200:
-                    self._is_live = True
-                    return res.json()
-        except Exception as e:
-            self._last_error = str(e)
-            self._is_live = False
+                with httpx.Client(timeout=self.timeout) as client:
+                    res = client.get(f"{self.base_url}{API_ENDPOINTS['INCIDENTS']}", params=params)
+                    if res.status_code == 200:
+                        self._is_live = True
+                        items = res.json()
+                        incidents: List[Incident] = []
+                        for raw in items:
+                            incidents.append(
+                                Incident(
+                                    id=raw["id"],
+                                    title=raw.get("headline") or raw.get("message") or f"Incident {raw['id']}",
+                                    service=raw["service"],
+                                    severity=raw["severity"],
+                                    status=raw["status"],
+                                    symptoms=raw.get("message", ""),
+                                    root_cause=raw.get("top_hypothesis"),
+                                    resolution=raw.get("resolution"),
+                                    started_at=raw.get("created_at", "2026-09-29T11:30:00Z"),
+                                    resolved_at=raw.get("resolved_at"),
+                                    affected_users=raw.get("affected_users"),
+                                    is_novel=raw.get("is_novel", False),
+                                    memory_used=raw.get("memory_used", True),
+                                )
+                            )
+                        return incidents
+            except Exception as e:
+                self._last_error = str(e)
+                self._is_live = False
 
-        # Fallback to mock data with filter support
-        results = list(MOCK_INCIDENTS)
+        # Fallback to mock data
+        results = [Incident.model_validate(inc) for inc in MOCK_INCIDENTS]
         if status:
-            results = [i for i in results if i.get("status") == status]
+            results = [i for i in results if i.status == status]
         if service:
-            results = [i for i in results if i.get("service") == service]
+            results = [i for i in results if i.service == service]
         if severity:
-            results = [i for i in results if i.get("severity") == severity]
+            results = [i for i in results if i.severity == severity]
         if active is not None:
             active_statuses = {"investigating", "recommended", "awaiting_approval", "executing"}
-            if active:
-                results = [i for i in results if i.get("status") in active_statuses]
-            else:
-                results = [i for i in results if i.get("status") not in active_statuses]
+            results = [i for i in results if (i.status in active_statuses) == active]
+
         return results[:limit]
 
-    def get_stats(self) -> Dict[str, Any]:
-        """Fetch KPI statistics from GET /incidents/stats."""
-        try:
-            with httpx.Client(timeout=self.timeout) as client:
-                res = client.get(f"{self.base_url}/incidents/stats")
-                if res.status_code == 200:
-                    self._is_live = True
-                    return res.json()
-        except Exception as e:
-            self._last_error = str(e)
-            self._is_live = False
-        return MOCK_STATS
+    # Alias for list_incidents
+    def list_incidents(self, **kwargs) -> List[Incident]:
+        return self.get_incidents(**kwargs)
 
-    def get_incident(self, incident_id: str) -> Optional[Dict[str, Any]]:
-        """Fetch full incident detail from GET /incidents/{incident_id}."""
-        try:
-            with httpx.Client(timeout=self.timeout) as client:
-                res = client.get(f"{self.base_url}/incidents/{incident_id}")
-                if res.status_code == 200:
-                    self._is_live = True
-                    return res.json()
-        except Exception as e:
-            self._last_error = str(e)
-            self._is_live = False
+    # 3. Fetch a single incident
+    def get_incident(self, incident_id: str) -> Optional[Incident]:
+        """Fetch single incident details (GET /incidents/{incident_id})."""
+        if not self.force_mocks:
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    res = client.get(f"{self.base_url}{API_ENDPOINTS['INCIDENT_BY_ID'](incident_id)}")
+                    if res.status_code == 200:
+                        self._is_live = True
+                        raw = res.json()
+                        return Incident(
+                            id=raw["id"],
+                            title=raw.get("headline") or raw.get("message") or f"Incident {raw['id']}",
+                            service=raw["service"],
+                            severity=raw["severity"],
+                            status=raw["status"],
+                            symptoms=raw.get("message", ""),
+                            root_cause=raw.get("top_hypothesis"),
+                            resolution=raw.get("resolution"),
+                            started_at=raw.get("created_at", "2026-09-29T11:30:00Z"),
+                            resolved_at=raw.get("resolved_at"),
+                            affected_users=raw.get("affected_users"),
+                            is_novel=raw.get("is_novel", False),
+                            memory_used=raw.get("memory_used", True),
+                        )
+            except Exception as e:
+                self._last_error = str(e)
+                self._is_live = False
 
         for inc in MOCK_INCIDENTS:
             if inc.get("id") == incident_id:
-                return {
-                    **inc,
-                    "alert": {"service": inc["service"], "message": inc["message"]},
-                    "recommendation": {
-                        "hypotheses": [
-                            {"cause": inc.get("top_hypothesis", "Investigating cause"), "confidence": inc.get("top_confidence", 0.9), "evidence_ids": ["EV-101"]}
-                        ],
-                        "steps": ["Step 1: Check metrics", "Step 2: Apply mitigation"],
-                        "runbook": "DB-POOL-RECOVERY",
-                        "avoid": ["Do not restart app without clearing pool lock"],
-                        "whats_different": "Matches known pattern from INC-104",
-                        "is_novel": inc.get("is_novel", False),
-                        "similar": [],
-                        "needs_approval": True,
-                    },
-                    "actions": [],
-                    "events": MOCK_MEMORY_CALLS,
-                }
+                return Incident.model_validate(inc)
         return None
 
-    def get_timeline(self, incident_id: str) -> List[Dict[str, Any]]:
-        """Fetch unified timeline from GET /incidents/{incident_id}/timeline."""
-        try:
-            with httpx.Client(timeout=self.timeout) as client:
-                res = client.get(f"{self.base_url}/incidents/{incident_id}/timeline")
-                if res.status_code == 200:
-                    self._is_live = True
-                    return res.json()
-        except Exception as e:
-            self._last_error = str(e)
-            self._is_live = False
-        return MOCK_MEMORY_CALLS
+    # 4. Trigger simulation
+    def trigger_simulation(self, scenario_id_or_incident_id: str) -> SimulationResponse:
+        """Trigger simulated remediation action for an incident or scenario."""
+        if not self.force_mocks:
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    res = client.post(
+                        f"{self.base_url}{API_ENDPOINTS['INCIDENT_SIMULATE'](scenario_id_or_incident_id)}"
+                    )
+                    if res.status_code in (200, 201):
+                        self._is_live = True
+                        data = res.json()
+                        return SimulationResponse(
+                            success=True,
+                            incident_id=data.get("incident_id") or scenario_id_or_incident_id,
+                            status=data.get("status", "executing"),
+                            message="Simulation execution initiated",
+                        )
+            except Exception as e:
+                self._last_error = str(e)
+                self._is_live = False
 
-    def get_memory_calls(self, incident_id: str) -> List[Dict[str, Any]]:
-        """Fetch memory RECALL/RETAIN logs from GET /incidents/{incident_id}/memory-calls."""
-        try:
-            with httpx.Client(timeout=self.timeout) as client:
-                res = client.get(f"{self.base_url}/incidents/{incident_id}/memory-calls")
-                if res.status_code == 200:
-                    self._is_live = True
-                    return res.json()
-        except Exception as e:
-            self._last_error = str(e)
-            self._is_live = False
-        return MOCK_MEMORY_CALLS
+        return SimulationResponse(
+            success=True,
+            incident_id=scenario_id_or_incident_id,
+            status="executing",
+            message=f"Simulation running for {scenario_id_or_incident_id}",
+        )
+
+    # 5. Reset simulation
+    def reset_simulation(self) -> Dict[str, bool]:
+        """Reset simulation and demo database state (POST /reset)."""
+        if not self.force_mocks:
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    res = client.post(f"{self.base_url}{API_ENDPOINTS['RESET_SIMULATION']}")
+                    if res.status_code == 200:
+                        self._is_live = True
+                        return {"success": True}
+            except Exception as e:
+                self._last_error = str(e)
+                self._is_live = False
+
+        return {"success": True}
+
+    # 6. Memory ON/OFF state
+    def get_memory_state(self) -> MemoryState:
+        """Fetch Hindsight memory toggle status (GET /settings/memory)."""
+        if not self.force_mocks:
+            try:
+                with httpx.Client(timeout=3.0) as client:
+                    res = client.get(f"{self.base_url}{API_ENDPOINTS['SETTINGS_MEMORY']}")
+                    if res.status_code == 200:
+                        self._is_live = True
+                        return MemoryState(enabled=bool(res.json().get("enabled", True)))
+            except Exception as e:
+                self._last_error = str(e)
+                self._is_live = False
+
+        return MemoryState(enabled=True)
+
+    def set_memory_state(self, enabled: bool) -> MemoryState:
+        """Update Hindsight memory toggle status (POST /settings/memory)."""
+        if not self.force_mocks:
+            try:
+                with httpx.Client(timeout=5.0) as client:
+                    res = client.post(
+                        f"{self.base_url}{API_ENDPOINTS['SETTINGS_MEMORY']}",
+                        json={"enabled": enabled, "actor": "engineer"},
+                    )
+                    if res.status_code == 200:
+                        self._is_live = True
+                        return MemoryState(enabled=bool(res.json().get("enabled", enabled)))
+            except Exception as e:
+                self._last_error = str(e)
+                self._is_live = False
+
+        return MemoryState(enabled=enabled)
 
     def get_memory_status(self) -> bool:
-        """Fetch memory toggle state from GET /settings/memory."""
-        try:
-            with httpx.Client(timeout=3.0) as client:
-                res = client.get(f"{self.base_url}/settings/memory")
-                if res.status_code == 200:
-                    self._is_live = True
-                    return bool(res.json().get("enabled", True))
-        except Exception as e:
-            self._last_error = str(e)
-            self._is_live = False
-        return True
+        """Convenience alias returning boolean memory status."""
+        return self.get_memory_state().enabled
 
     def toggle_memory(self, enabled: bool) -> bool:
-        """Update memory toggle via POST /settings/memory."""
-        try:
-            with httpx.Client(timeout=5.0) as client:
-                res = client.post(f"{self.base_url}/settings/memory", json={"enabled": enabled, "actor": "engineer"})
-                if res.status_code == 200:
-                    self._is_live = True
-                    return bool(res.json().get("enabled", enabled))
-        except Exception as e:
-            self._last_error = str(e)
-            self._is_live = False
-        return enabled
+        """Convenience alias updating and returning boolean memory status."""
+        return self.set_memory_state(enabled).enabled
 
-    def trigger_demo_alert(self) -> Dict[str, Any]:
-        """Trigger predefined demo alert via POST /alerts/demo."""
-        try:
-            with httpx.Client(timeout=5.0) as client:
-                res = client.post(f"{self.base_url}/alerts/demo")
-                if res.status_code in (200, 201):
-                    self._is_live = True
-                    return res.json()
-        except Exception as e:
-            self._last_error = str(e)
-            self._is_live = False
-        return {"incident_id": "INC-DEMO-MOCK", "status": "investigating"}
+    # Supporting telemetry methods
+    def get_stats(self) -> IncidentStats:
+        """Fetch KPI statistics (GET /incidents/stats)."""
+        if not self.force_mocks:
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    res = client.get(f"{self.base_url}{API_ENDPOINTS['INCIDENT_STATS']}")
+                    if res.status_code == 200:
+                        self._is_live = True
+                        return IncidentStats.model_validate(res.json())
+            except Exception as e:
+                self._last_error = str(e)
+                self._is_live = False
 
-    def post_alert(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Ingest new alert via POST /alerts."""
-        try:
-            with httpx.Client(timeout=5.0) as client:
-                res = client.post(f"{self.base_url}/alerts", json=payload)
-                if res.status_code in (200, 201):
-                    self._is_live = True
-                    return res.json()
-        except Exception as e:
-            self._last_error = str(e)
-            self._is_live = False
-        return {"incident_id": "INC-NEW-MOCK", "status": "investigating"}
+        return IncidentStats.model_validate(MOCK_STATS)
 
-    def reset_demo(self) -> bool:
-        """Reset demo database and memory state via POST /reset."""
-        try:
-            with httpx.Client(timeout=5.0) as client:
-                res = client.post(f"{self.base_url}/reset")
-                if res.status_code == 200:
-                    self._is_live = True
-                    return True
-        except Exception as e:
-            self._last_error = str(e)
-            self._is_live = False
-        return True
+    def get_simulation_scenarios(self) -> List[SimulationScenario]:
+        """Fetch predefined outage scenarios."""
+        return [SimulationScenario.model_validate(sc) for sc in MOCK_SIMULATION_SCENARIOS]
+
+    def get_timeline(self, incident_id: str) -> List[TimelineEvent]:
+        """Fetch incident timeline events (GET /incidents/{incident_id}/timeline)."""
+        if not self.force_mocks:
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    res = client.get(f"{self.base_url}{API_ENDPOINTS['INCIDENT_TIMELINE'](incident_id)}")
+                    if res.status_code == 200:
+                        self._is_live = True
+                        items = res.json()
+                        return [
+                            TimelineEvent(
+                                id=f"EVT-{idx+1}",
+                                timestamp=ev.get("ts", "2026-09-29T11:30:00Z"),
+                                type=ev.get("kind", "agent"),
+                                message=ev.get("title") or ev.get("step") or "Timeline step",
+                                status=ev.get("status"),
+                                detail=ev.get("detail"),
+                            )
+                            for idx, ev in enumerate(items)
+                        ]
+            except Exception as e:
+                self._last_error = str(e)
+                self._is_live = False
+
+        return [TimelineEvent.model_validate(ev) for ev in MOCK_TIMELINE_EVENTS]
 
 
 # Default shared client instance
-api_client = APIClient()
+api_client = ApiClient()

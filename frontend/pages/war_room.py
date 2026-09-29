@@ -122,7 +122,7 @@ def render_war_room(
         if on_back is not None:
             on_back()
             return
-        st.session_state["selected_page"] = "Dashboard"
+        st.session_state["_nav_destination"] = "Dashboard"
         st.rerun()
 
     if not incident_id:

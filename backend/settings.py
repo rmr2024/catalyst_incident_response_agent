@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     hindsight_url: str = "http://localhost:8888"
     hindsight_api_key: str = ""
     hindsight_bank: str = "incidents"
+    novel_threshold: float = 0.25  # similarity threshold below which an incident is flagged as novel
 
     @property
     def cors_list(self) -> list[str]:
